@@ -7,6 +7,7 @@
 - name: Installiere Backup-Tools
   apt:
     name:
+      - ca-certificates
       - msmtp
       - msmtp-mta   # optional, sorgt dafür dass 'mail' funktioniert
       - mailutils

@@ -6,6 +6,32 @@
     group: xibo
     mode: '0755'
 
+- name: Ensure backup_state table exists
+  community.mysql.mysql_query:
+    login_host: "{{ mysql_host }}"
+    login_user: "{{ mysql_user }}"
+    login_password: "{{ mysql_password }}"
+    login_db: "{{ xibo_db_name }}"
+    query: |
+      CREATE TABLE IF NOT EXISTS backup_state (
+        id INT PRIMARY KEY,
+        db_hash CHAR(64) NOT NULL,
+        media_hash CHAR(64) NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+          DEFAULT CURRENT_TIMESTAMP
+          ON UPDATE CURRENT_TIMESTAMP
+      );
+
+- name: Ensure backup_state row exists
+  community.mysql.mysql_query:
+    login_host: "{{ mysql_host }}"
+    login_user: "{{ mysql_user }}"
+    login_password: "{{ mysql_password }}"
+    login_db: "{{ xibo_db_name }}"
+    query: |
+      INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
+      VALUES (1, '', '');
+
 - name: Deploy Xibo Backup Script (change-based + retention)
   ansible.builtin.template:
     dest: /opt/xibo-backup/backup_xibo.sh
@@ -13,6 +39,7 @@
     group: xibo
     mode: '0755'
     src: backup_xibo.sh.j2
+  notify: Reset backup state
 
 - name: Erstelle Log-Cleanup Skript
   become: yes

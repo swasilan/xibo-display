@@ -1,0 +1,10 @@
+- name: Reset backup state
+  community.mysql.mysql_query:
+    login_host: "{{ mysql_host }}"
+    login_user: "{{ mysql_user }}"
+    login_password: "{{ mysql_password }}"
+    login_db: "{{ xibo_db_name }}"
+    query: |
+      UPDATE backup_state
+      SET db_hash = '', media_hash = ''
+      WHERE id = 1
