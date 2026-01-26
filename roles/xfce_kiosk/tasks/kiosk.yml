@@ -1,0 +1,61 @@
+- name: XFCE Config-Verzeichnisse anlegen
+  file:
+    path: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml"
+    state: directory
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: '0755'
+
+- name: XFCE Config-Verzeichnisse anlegen
+  file:
+    path: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml"
+    state: directory
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: '0755'
+
+- name: XFCE Session hart konfigurieren
+  copy:
+    dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml"
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    content: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-session" version="1.0">
+        <property name="general" type="empty">
+          <property name="SaveOnExit" type="bool" value="false"/>
+          <property name="LockCommand" type="string" value=""/>
+          <property name="LockScreen" type="bool" value="false"/>
+        </property>
+      </channel>
+
+- name: XFCE Power Manager konfigurieren (kein Standby)
+  copy:
+    dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml"
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    content: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfce4-power-manager" version="1.0">
+        <property name="xfce4-power-manager" type="empty">
+          <property name="blank-on-ac" type="int" value="0"/>
+          <property name="dpms-enabled" type="bool" value="false"/>
+          <property name="sleep-display-ac" type="int" value="0"/>
+          <property name="sleep-display-battery" type="int" value="0"/>
+          <property name="lid-action-on-ac" type="int" value="0"/>
+          <property name="lid-action-on-battery" type="int" value="0"/>
+        </property>
+      </channel>
+
+#- name: LightDM Autologin für Kiosk-User konfigurieren
+#  copy:
+#    dest: /etc/lightdm/lightdm.conf.d/50-kiosk.conf
+#    content: |
+#      [Seat:*]
+#      autologin-user={{ kiosk_user }}
+#      autologin-user-timeout=0
+#      greeter-session=lightdm-gtk-greeter
+#      user-session=xfce
+#    owner: root
+#    group: root
+#    mode: '0644'

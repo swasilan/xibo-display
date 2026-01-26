@@ -1,0 +1,28 @@
+- name: Kiosk-User anlegen
+  user:
+    name: "{{ kiosk_user }}"
+    shell: /bin/bash
+    create_home: yes
+    groups: video,audio,nopasswdlogin
+    state: present
+
+- name: Füge Kiosk-User zur nopasswdlogin Gruppe hinzu
+  user:
+    name: "{{ kiosk_user }}"
+    groups: nopasswdlogin
+    append: yes
+
+- name: Sicherstellen, dass kein sudo existiert
+  file:
+    path: "/etc/sudoers.d/{{ kiosk_user }}"
+    state: absent
+
+- name: Erstelle Home-Ordner .xsession für XFCE Autostart
+  copy:
+    dest: "/home/{{ kiosk_user }}/.xsession"
+    content: |
+      #!/bin/bash
+      exec startxfce4
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: '0755'

@@ -1,0 +1,10 @@
+# Xibo CMS
+xibo_cms_url: "http://{{ xibo_cms_host }}:8080"
+
+# Wird aus der DB gelesen oder manuell gesetzt
+xibo_server_key: ""
+
+# Player
+xibo_player_name: "{{ inventory_hostname }}"
+xibo_player_timezone: "Europe/Berlin"
+kiosk_user: "xibo-display"

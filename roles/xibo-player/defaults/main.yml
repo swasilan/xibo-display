@@ -1,0 +1,25 @@
+---
+# -------------------------
+# Xibo Player defaults
+# -------------------------
+
+# Kiosk-User, unter dem der Player läuft
+kiosk_user: xibo-display
+
+# Xibo CMS URL (lokal, Port 8080)
+xibo_cms_url: "http://localhost:8080"
+xibo_cms_host: "localhost"
+
+# Xibo Player Autostart-Einstellungen
+xibo_player_autostart: true
+
+# MySQL-Daten für den Zugriff auf den CMS-Server (Docker-Container)
+xibo_db_container: xibo-db
+xibo_db_host: db
+xibo_db_port: 3306
+xibo_db_user: xibo
+xibo_db_password: xibopass
+xibo_db_name: xibo
+
+# Optional: Snap-Kanal oder Version
+xibo_player_snap_channel: stable

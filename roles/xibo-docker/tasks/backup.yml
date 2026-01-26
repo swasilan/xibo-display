@@ -1,0 +1,30 @@
+- name: Erstelle Backup-Ordner
+  file:
+    path: /opt/xibo-backup/backups
+    state: directory
+    owner: xibo
+    group: xibo
+    mode: '0755'
+
+- name: Deploy Xibo Backup Script (change-based + retention)
+  ansible.builtin.template:
+    dest: /opt/xibo-backup/backup_xibo.sh
+    owner: xibo
+    group: xibo
+    mode: '0755'
+    src: backup_xibo.sh.j2
+
+- name: Erstelle Log-Cleanup Skript
+  become: yes
+  ansible.builtin.copy:
+    dest: /opt/xibo-backup/cleanup_logs.sh
+    owner: xibo
+    group: xibo
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+
+      LOGDIR="/opt/xibo-backup"
+
+      find "$LOGDIR" -maxdepth 1 -type f -name "log_*.log" -mtime +30 -print -delete

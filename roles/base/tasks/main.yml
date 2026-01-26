@@ -1,0 +1,3 @@
+---
+- import_tasks: install.yml       # Basis Installation
+- import_tasks: wlan.yml          # Wlan Konfiguration

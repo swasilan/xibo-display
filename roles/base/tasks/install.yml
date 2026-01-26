@@ -1,0 +1,39 @@
+- name: Update Paket-Cache
+  ansible.builtin.apt:
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Installiere Basis-Pakete
+  ansible.builtin.package:
+    name: "{{ base_packages }}"
+    state: present
+
+- name: Setze Zeitzone
+  ansible.builtin.timezone:
+    name: "{{ timezone }}"
+  become: yes
+
+- name: unzip installieren
+  become: yes
+  ansible.builtin.package:
+    name: unzip
+    state: present
+  when: ansible_os_family in ["Debian", "RedHat"]
+
+- name: Rclone installieren
+  become: yes
+  ansible.builtin.shell: |
+    set -e
+    tmpdir=$(mktemp -d)
+    cd "$tmpdir"
+    curl -fsSLO https://downloads.rclone.org/rclone-current-linux-amd64.zip
+    unzip -q rclone-current-linux-amd64.zip
+    cp rclone-*-linux-amd64/rclone /usr/bin/rclone
+    chmod 755 /usr/bin/rclone
+    chown root:root /usr/bin/rclone
+    rm -rf "$tmpdir"
+  args:
+    creates: /usr/bin/rclone
+    executable: /bin/bash
+  when: ansible_os_family in ["Debian", "RedHat"]
+

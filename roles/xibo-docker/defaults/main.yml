@@ -1,0 +1,5 @@
+xibo_cms_version: "3.2.6"
+xibo_db_password: "changeme"
+xibo_web_port: 8080
+xibo_db_port: 3306
+xibo_data_dir: "/opt/xibo"

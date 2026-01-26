@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  db:
+    image: {{ xibo_db_image }}
+    container_name: {{ xibo_db_container }}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: {{ xibo_db_name }}
+      MYSQL_USER: {{ xibo_db_user }}
+      MYSQL_PASSWORD: {{ xibo_db_password }}
+    command: --innodb_use_native_aio=0
+    ports:
+      - "{{ xibo_db_port_host }}:{{ xibo_db_port_container }}"
+    volumes:
+      - {{ xibo_db_volume }}:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p{{ xibo_db_password }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cms:
+    image: {{ xibo_cms_image }}
+    container_name: {{ xibo_cms_container }}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "{{ xibo_cms_port_host }}:{{ xibo_cms_port_container }}"
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: {{ xibo_db_name }}
+      MYSQL_USER: {{ xibo_db_user }}
+      MYSQL_PASSWORD: {{ xibo_db_password }}
+
+volumes:
+  {{ xibo_db_volume }}:

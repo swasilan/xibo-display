@@ -1,0 +1,2 @@
+kiosk_user: xibo-display
+kiosk_home: "/home/{{ kiosk_user }}"

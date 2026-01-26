@@ -1,0 +1,12 @@
+- name: Installiere XFCE minimal + Display Manager
+  apt:
+    name:
+      - xfce4-session
+      - xfwm4
+      - xfconf
+      - lightdm
+      - lightdm-gtk-greeter
+      - dbus-x11
+      - x11-xserver-utils
+    state: present
+    update_cache: yes

@@ -1,0 +1,134 @@
+---
+# -------------------------
+# Install Snapd
+# -------------------------
+- name: Install snapd
+  apt:
+    name: snapd
+    state: present
+    update_cache: yes
+
+- name: Ensure snapd is running
+  systemd:
+    name: snapd
+    state: started
+    enabled: yes
+
+# -------------------------
+# Install required fonts
+# -------------------------
+- name: Install required fonts for Xibo Player
+  apt:
+    name:
+      - fonts-dejavu
+      - fonts-liberation
+      - ttf-mscorefonts-installer
+      - xfonts-base
+      - xfonts-75dpi
+    state: present
+    update_cache: yes
+
+# -------------------------
+# Install Xibo Player snap
+# -------------------------
+- name: Install Xibo Player snap
+  snap:
+    name: xibo-player
+    state: present
+    classic: yes
+
+# -------------------------
+# Create snap config directory
+# -------------------------
+- name: Create snap config directory
+  file:
+    path: "/home/{{ kiosk_user }}/snap/xibo-player/common"
+    state: directory
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: "0755"
+
+# -------------------------
+# Read SERVER_KEY from CMS database (Docker)
+# -------------------------
+- name: Lese Xibo SERVER_KEY aus der Datenbank
+  command: >
+    docker exec {{ xibo_db_container }}
+    mysql -u {{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+    -sNe "SELECT value FROM setting WHERE setting='SERVER_KEY';"
+  register: server_key_result
+  changed_when: false
+
+- name: Setze SERVER_KEY Variable
+  set_fact:
+    xibo_server_key: "{{ server_key_result.stdout }}"
+
+- name: Debug SERVER_KEY
+  debug:
+    msg: "Xibo SERVER_KEY = {{ xibo_server_key }}"
+
+# -------------------------
+# Configure Xibo Player
+# -------------------------
+- name: Set cmsAddress
+  ansible.builtin.replace:
+    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
+    regexp: '<cmsAddress>.*?</cmsAddress>'
+    replace: '<cmsAddress>{{ xibo_cms_url }}</cmsAddress>'
+
+- name: Set key
+  ansible.builtin.replace:
+    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
+    regexp: '<key>.*?</key>'
+    replace: '<key>{{ xibo_server_key }}</key>'
+
+- name: Set localLibrary
+  ansible.builtin.replace:
+    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
+    regexp: '<localLibrary>.*?</localLibrary>'
+    replace: '<localLibrary>"/home/{{ kiosk_user }}/Documents"</localLibrary>'
+
+# -------------------------
+# Enable linger for kiosk user
+# -------------------------
+- name: Prüfe, ob Linger für Benutzer aktiv ist
+  ansible.builtin.command: loginctl show-user {{ kiosk_user }} -p Linger
+  register: linger_status
+  changed_when: false
+  failed_when: false
+
+- name: Enable linger for user
+  ansible.builtin.command: loginctl enable-linger {{ kiosk_user }}
+  when: "'Linger=yes' not in linger_status.stdout"
+
+# -------------------------
+# Create Xibo Player autostart
+# -------------------------
+- name: Create Xibo Player autostart directory
+  file:
+    path: "/home/{{ kiosk_user }}/.config/autostart"
+    state: directory
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: '0755'
+
+- name: Create Xibo Player autostart entry
+  copy:
+    dest: "/home/{{ kiosk_user }}/.config/autostart/xibo-player.desktop"
+    content: |
+      [Desktop Entry]
+      Encoding=UTF-8
+      Version=0.9.4
+      Type=Application
+      Name=xibo-player
+      Comment=
+      Exec=xibo-player
+      OnlyShowIn=XFCE;
+      RunHook=0
+      StartupNotify=false
+      Terminal=false
+      Hidden=false
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: '0644'
+

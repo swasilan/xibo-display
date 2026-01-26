@@ -1,0 +1,35 @@
+---
+- name: Check if DB is empty
+  command: >
+    docker exec xibo-db mysql
+    -u xibo -pxibopass -e
+    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='xibo';"
+  register: db_count
+  changed_when: False
+
+- name: Find latest backup zip
+  find:
+    paths: /home/xibo/backups
+    patterns: "xibo_backup_*.zip"
+    recurse: no
+    age: 0
+  register: backups
+
+- name: Restore latest backup if DB is empty
+  when: db_count.stdout|int == 0 and backups.files|length > 0
+  block:
+    - name: Unarchive latest backup
+      unarchive:
+        src: "{{ (backups.files | sort(attribute='mtime'))[-1].path }}"
+        dest: /tmp/xibo_restore
+        remote_src: yes
+
+    - name: Restore DB
+      command: >
+        docker cp /tmp/xibo_restore/db.sql xibo-db:/db.sql
+    - command: >
+        docker exec xibo-db /bin/bash -c "mysql -u xibo -pxibopass xibo < /db.sql"
+
+    - name: Restore CMS files
+      command: >
+        cp -r /tmp/xibo_restore/cms/* /opt/xibo-docker/cms/

@@ -1,0 +1,12 @@
+# Standardpakete und Einstellungen für die Basisrolle
+base_packages:
+  - htop
+  - git
+  - curl
+  - vim
+timezone: "Europe/Berlin"
+
+wifi_enabled: false
+wifi_ssid: ""
+wifi_password: ""
+wifi_interface: "wlan0"

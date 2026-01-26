@@ -1,0 +1,5 @@
+# z. B. für Neustart von Diensten, wenn nötig
+- name: Neustart eines Dienstes
+  ansible.builtin.service:
+    name: "{{ service_name }}"
+    state: restarted

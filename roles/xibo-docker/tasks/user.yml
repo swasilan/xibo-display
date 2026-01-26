@@ -1,0 +1,7 @@
+- name: Add xibo user to docker group
+  become: yes
+  ansible.builtin.user:
+    name: xibo
+    groups: docker
+    append: yes
+

@@ -1,0 +1,11 @@
+- name: Lokale Basiskonfiguration
+  hosts: local
+  gather_facts: yes
+  become: yes
+  vars:
+    local_user: "{{ lookup('env','USER') }}"
+  roles:
+    - base
+    - xibo-docker
+    - xfce_kiosk
+    - xibo-player

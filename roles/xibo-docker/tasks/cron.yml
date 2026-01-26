@@ -1,0 +1,17 @@
+- name: Setup Xibo backup cronjob (alle 20 Minuten)
+  become: yes
+  ansible.builtin.cron:
+    name: "Xibo Backup every 20 minutes"
+    user: xibo
+    minute: "*/2"
+    hour: "*"
+    job: "bash /opt/xibo-backup/backup_xibo.sh"
+
+- name: Setup Cronjob für Log-Cleanup
+  become: yes
+  ansible.builtin.cron:
+    name: "Xibo Backup Log Cleanup"
+    user: xibo
+    hour: "3"
+    minute: "0"
+    job: "bash /opt/xibo-backup/cleanup_logs.sh >> /opt/xibo-backup/cleanup.log 2>&1"
