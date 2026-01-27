@@ -9,7 +9,7 @@
 
 - name: Find latest backup zip
   find:
-    paths: /home/xibo/backups
+    paths: /opt/xibo-backup/backups
     patterns: "xibo_backup_*.zip"
     recurse: no
     age: 0
