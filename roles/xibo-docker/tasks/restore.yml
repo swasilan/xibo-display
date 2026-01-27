@@ -1,35 +1,74 @@
 ---
-- name: Check if DB is empty
-  command: >
-    docker exec xibo-db mysql
-    -u xibo -pxibopass -e
-    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='xibo';"
-  register: db_count
-  changed_when: False
+- name: Restore Xibo Backup
+  hosts: localhost
+  gather_facts: false
+  vars:
+    backup_dir: /opt/xibo-backup/backups
+    restore_tmp_dir: /tmp/xibo_restore
+    cms_path: /opt/xibo-docker/cms
+    db_container: xibo-db
+    db_name: xibo
+    db_user: xibo
+    db_pass: xibopass
 
-- name: Find latest backup zip
-  find:
-    paths: /opt/xibo-backup/backups
-    patterns: "xibo_backup_*.zip"
-    recurse: no
-    age: 0
-  register: backups
+  tasks:
 
-- name: Restore latest backup if DB is empty
-  when: db_count.stdout|int == 0 and backups.files|length > 0
-  block:
+    - name: Ensure restore temp directory exists
+      file:
+        path: "{{ restore_tmp_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure CMS directory exists
+      file:
+        path: "{{ cms_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Find latest backup zip
+      find:
+        paths: "{{ backup_dir }}"
+        patterns: "xibo_backup_*.zip"
+        recurse: no
+      register: backups
+
+    - name: Fail if no backups found
+      fail:
+        msg: "Keine Backups gefunden in {{ backup_dir }}"
+      when: backups.files | length == 0
+
+    - name: Ask user if they want to restore the latest backup
+      pause:
+        prompt: "Restore neuestes Backup {{ (backups.files | sort(attribute='mtime'))[-1].path }}? (yes/no)"
+      register: restore_confirm
+
+    - name: Abort restore if user declined
+      fail:
+        msg: "Restore abgebrochen vom Benutzer."
+      when: restore_confirm.user_input | lower not in ['y','yes']
+
     - name: Unarchive latest backup
       unarchive:
         src: "{{ (backups.files | sort(attribute='mtime'))[-1].path }}"
-        dest: /tmp/xibo_restore
+        dest: "{{ restore_tmp_dir }}"
         remote_src: yes
 
     - name: Restore DB
-      command: >
-        docker cp /tmp/xibo_restore/db.sql xibo-db:/db.sql
-    - command: >
-        docker exec xibo-db /bin/bash -c "mysql -u xibo -pxibopass xibo < /db.sql"
+      block:
+        - name: Copy DB dump into container
+          command: >
+            docker cp {{ restore_tmp_dir }}/db.sql {{ db_container }}:/db.sql
+
+        - name: Import DB dump
+          command: >
+            docker exec {{ db_container }} /bin/bash -c
+            "mysql -u {{ db_user }} -p{{ db_pass }} {{ db_name }} < /db.sql"
 
     - name: Restore CMS files
       command: >
-        cp -r /tmp/xibo_restore/cms/* /opt/xibo-docker/cms/
+        rsync -a {{ restore_tmp_dir }}/cms/ {{ cms_path }}/
+
+    - name: Cleanup restore temp
+      file:
+        path: "{{ restore_tmp_dir }}"
+        state: absent
