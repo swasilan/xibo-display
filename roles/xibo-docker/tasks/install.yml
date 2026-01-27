@@ -11,6 +11,7 @@
       - msmtp
       - msmtp-mta   # optional, sorgt dafür dass 'mail' funktioniert
       - mailutils
+      - python3-pymysql
       - rsync
       - zip
     state: present

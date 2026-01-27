@@ -1,3 +1,6 @@
+---
+# tasks/backup.yml
+
 - name: Erstelle Backup-Ordner
   file:
     path: /opt/xibo-backup/backups
@@ -8,9 +11,9 @@
 
 - name: Ensure backup_state table exists
   community.mysql.mysql_query:
-    login_host: "{{ mysql_host }}"
-    login_user: "{{ mysql_user }}"
-    login_password: "{{ mysql_password }}"
+    login_host: "{{ xibo_db_host }}"
+    login_user: "{{ xibo_db_user }}"
+    login_password: "{{ xibo_db_password }}"
     login_db: "{{ xibo_db_name }}"
     query: |
       CREATE TABLE IF NOT EXISTS backup_state (
@@ -24,22 +27,21 @@
 
 - name: Ensure backup_state row exists
   community.mysql.mysql_query:
-    login_host: "{{ mysql_host }}"
-    login_user: "{{ mysql_user }}"
-    login_password: "{{ mysql_password }}"
+    login_host: "{{ xibo_db_host }}"
+    login_user: "{{ xibo_db_user }}"
+    login_password: "{{ xibo_db_password }}"
     login_db: "{{ xibo_db_name }}"
     query: |
       INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
       VALUES (1, '', '');
 
-- name: Deploy Xibo Backup Script (change-based + retention)
+- name: Deploy Xibo Backup Script
   ansible.builtin.template:
+    src: backup_xibo.sh.j2
     dest: /opt/xibo-backup/backup_xibo.sh
     owner: xibo
     group: xibo
     mode: '0755'
-    src: backup_xibo.sh.j2
-  notify: Reset backup state
 
 - name: Erstelle Log-Cleanup Skript
   become: yes
@@ -51,7 +53,5 @@
     content: |
       #!/bin/bash
       set -e
-
       LOGDIR="/opt/xibo-backup"
-
       find "$LOGDIR" -maxdepth 1 -type f -name "log_*.log" -mtime +30 -print -delete
