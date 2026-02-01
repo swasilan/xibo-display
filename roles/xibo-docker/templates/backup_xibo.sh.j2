@@ -3,10 +3,10 @@
 set -euo pipefail
 {% endraw %}
 
-# -------------------------------------------------------------------
-# Konfiguration (durch Ansible)
-# -------------------------------------------------------------------
-BACKUP_BASE="{{ backup_base | default('/opt/xibo-backup') }}"
+# --------------------------------------------------
+# Konfiguration (per Ansible)
+# --------------------------------------------------
+BACKUP_BASE="/opt/xibo-backup"
 BACKUP_DIR="$BACKUP_BASE/backups"
 LOG_DIR="$BACKUP_BASE/logs"
 
@@ -15,13 +15,10 @@ DB_NAME="{{ xibo_db_name }}"
 DB_USER="{{ xibo_db_user }}"
 DB_PASS="{{ xibo_db_password }}"
 
-CMS_PATH="{{ xibo_cms_path }}"
-MEDIA_PATH="$CMS_PATH/library"
+CMS_PATH="/opt/xibo-docker/shared/cms"
 
-MIN_BACKUPS={{ backup_min_backups | default(5) }}
-MAX_BACKUPS={{ backup_max_backups | default(30) }}
-
-ALERT_EMAIL="{{ backup_alert_email | default('') }}"
+MIN_BACKUPS=5
+MAX_BACKUPS=30
 
 {% raw %}
 # --------------------------------------------------
@@ -31,32 +28,26 @@ mkdir -p "$BACKUP_DIR" "$LOG_DIR"
 
 TMP_DIR="$(mktemp -d)"
 TIMESTAMP="$(date +'%Y%m%d_%H%M%S')"
-LOG_DATE="$(date +'%F')"
-LOG_FILE="$LOG_DIR/backup_$LOG_DATE.log"
+LOG_FILE="$LOG_DIR/backup_$(date +'%F').log"
 
 exec >>"$LOG_FILE" 2>&1
 
 log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  echo "[$(date '+%F %T')] $*"
 }
 
-cleanup() {
-  rm -rf "$TMP_DIR"
-}
-trap cleanup EXIT
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 log "===== Xibo Backup gestartet ====="
-log "Temp-Verzeichnis: $TMP_DIR"
 
 # --------------------------------------------------
-# DB-Fingerprint (stabil, ohne Flattern)
+# DB Fingerprint
 # --------------------------------------------------
-log "Berechne DB-Fingerprint"
+log "Berechne DB Fingerprint"
 
 DB_HASH="$(
   docker exec "$DB_CONTAINER" mysql -N -B \
-    -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" <<'SQL' \
-  | sha256sum | awk '{print $1}'
+    -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" <<'SQL'
 SELECT
   table_name,
   table_rows,
@@ -67,35 +58,27 @@ FROM information_schema.tables
 WHERE table_schema = DATABASE()
 ORDER BY table_name;
 SQL
+  | sha256sum | awk '{print $1}'
 )"
 
-if [[ -z "$DB_HASH" ]]; then
-  log "FEHLER: DB_HASH leer"
-  exit 1
-fi
-
-log "DB_HASH=$DB_HASH"
+[[ -z "$DB_HASH" ]] && { log "FEHLER: DB_HASH leer"; exit 1; }
 
 # --------------------------------------------------
-# Media-Fingerprint (Uploads)
+# Media Fingerprint
 # --------------------------------------------------
-log "Berechne Media-Fingerprint"
+log "Berechne Media Fingerprint"
 
 MEDIA_HASH="$(
-  if [[ -d "$MEDIA_PATH" ]]; then
-    find "$MEDIA_PATH" -type f -printf '%P|%s|%T@\n' \
-      | sort \
-      | sha256sum \
-      | awk '{print $1}'
+  if [[ -d "$CMS_PATH" ]]; then
+    find "$CMS_PATH" -type f -printf '%P|%s|%T@\n' \
+      | sort | sha256sum | awk '{print $1}'
   else
     echo "no-media" | sha256sum | awk '{print $1}'
   fi
 )"
 
-log "MEDIA_HASH=$MEDIA_HASH"
-
 # --------------------------------------------------
-# Alten Zustand aus DB lesen
+# Alten Zustand lesen
 # --------------------------------------------------
 read -r OLD_DB_HASH OLD_MEDIA_HASH < <(
   docker exec "$DB_CONTAINER" mysql -N -B \
@@ -106,8 +89,8 @@ read -r OLD_DB_HASH OLD_MEDIA_HASH < <(
 OLD_DB_HASH="${OLD_DB_HASH:-}"
 OLD_MEDIA_HASH="${OLD_MEDIA_HASH:-}"
 
-log "OLD_DB_HASH=${OLD_DB_HASH:-<none>}"
-log "OLD_MEDIA_HASH=${OLD_MEDIA_HASH:-<none>}"
+log "DB_HASH=$DB_HASH"
+log "MEDIA_HASH=$MEDIA_HASH"
 
 DO_BACKUP=false
 [[ "$DB_HASH" != "$OLD_DB_HASH" ]] && DO_BACKUP=true
@@ -118,9 +101,8 @@ DO_BACKUP=false
 # --------------------------------------------------
 if [[ "$DO_BACKUP" == true ]]; then
   BACKUP_FILE="$BACKUP_DIR/xibo_backup_$TIMESTAMP.zip"
-  log "Änderung erkannt → erstelle Backup $BACKUP_FILE"
+  log "Änderung erkannt → erstelle Backup"
 
-  log "DB-Dump"
   docker exec "$DB_CONTAINER" mysqldump \
     --single-transaction \
     --quick \
@@ -129,15 +111,10 @@ if [[ "$DO_BACKUP" == true ]]; then
     -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" \
     > "$TMP_DIR/db.sql"
 
-  log "CMS-Dateien"
   rsync -a "$CMS_PATH/" "$TMP_DIR/cms/"
 
   (cd "$TMP_DIR" && zip -rq "$BACKUP_FILE" .)
 
-  log "Backup erstellt: $BACKUP_FILE"
-  ls -lh "$BACKUP_FILE"
-
-  log "Update backup_state"
   docker exec "$DB_CONTAINER" mysql \
     -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" \
     -e "
@@ -147,8 +124,9 @@ if [[ "$DO_BACKUP" == true ]]; then
       WHERE id=1;
     "
 
+  log "Backup abgeschlossen: $BACKUP_FILE"
 else
-  log "Keine Änderung erkannt → kein Backup"
+  log "Keine Änderungen → kein Backup"
 fi
 
 # --------------------------------------------------
@@ -157,14 +135,12 @@ fi
 mapfile -t BACKUPS < <(ls -1t "$BACKUP_DIR"/xibo_backup_*.zip 2>/dev/null || true)
 COUNT="${#BACKUPS[@]}"
 
-log "Backups vorhanden: $COUNT"
-
 if (( COUNT > MAX_BACKUPS )); then
   for ((i=MAX_BACKUPS; i<COUNT; i++)); do
-    log "Lösche altes Backup: ${BACKUPS[$i]}"
     rm -f "${BACKUPS[$i]}"
+    log "Altes Backup gelöscht: ${BACKUPS[$i]}"
   done
 fi
 
-log "===== Xibo Backup beendet ====="
+log "===== Backup beendet ====="
 {% endraw %}
