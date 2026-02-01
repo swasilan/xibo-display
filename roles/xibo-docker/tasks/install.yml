@@ -66,11 +66,9 @@
 # Xibo Stack starten
 # --------------------------------------------------
 - name: Start Xibo stack (idempotent)
-  become: yes
-  become_user: xibo
-  command: docker compose up -d
-  args:
-    chdir: /opt/xibo-docker
+  community.docker.docker_compose:
+    project_src: /opt/xibo-docker
+    state: present
 
 # --------------------------------------------------
 # Warten bis DB healthy
