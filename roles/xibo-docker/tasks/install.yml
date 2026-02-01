@@ -8,7 +8,7 @@
       - xibo_db_user is defined
       - xibo_db_password is defined
     fail_msg: "Required Xibo variables are missing"
-
+    
 # ==================================================
 # Basis & Abhängigkeiten
 # ==================================================
@@ -60,7 +60,7 @@
     - shared/cms/ca-certs
 
 # ==================================================
-# config.env (required by compose)
+# config.env
 # ==================================================
 - name: Ensure config.env exists
   become: yes
@@ -70,7 +70,7 @@
     group: xibo
     mode: "0644"
     content: |
-      MYSQL_ROOT_PASSWORD={{ xibo_db_root_password | default('rootpass') }}
+      MYSQL_ROOT_PASSWORD=rootpass
       MYSQL_DATABASE={{ xibo_db_name }}
       MYSQL_USER={{ xibo_db_user }}
       MYSQL_PASSWORD={{ xibo_db_password }}
@@ -79,7 +79,7 @@
 # ==================================================
 # Docker Compose
 # ==================================================
-- name: Deploy docker-compose.yml
+- name: Deploy Docker Compose file
   become: yes
   template:
     src: docker-compose.yml.j2
@@ -89,7 +89,7 @@
     mode: "0644"
 
 # ==================================================
-# Xibo Stack starten (idempotent)
+# Xibo Stack starten
 # ==================================================
 - name: Start Xibo stack
   community.docker.docker_compose:
@@ -97,81 +97,81 @@
     state: present
 
 # ==================================================
-# Warten bis MySQL erreichbar ist (robust!)
+# Warten bis DB erreichbar (robust)
 # ==================================================
-- name: Wait until MySQL responds
-  command: >
-    docker exec {{ xibo_db_container }}
-    mysqladmin ping
-    -u{{ xibo_db_user }} -p{{ xibo_db_password }}
-  register: mysql_ping
-  until: mysql_ping.rc == 0
+- name: Wait until DB accepts connections
+  shell: |
+    docker exec {{ xibo_db_container }} \
+    mysqladmin ping -u{{ xibo_db_user }} -p{{ xibo_db_password }}
+  register: db_ping
   retries: 30
   delay: 5
+  until: db_ping.rc == 0
   changed_when: false
 
 # ==================================================
-# Admin-User umbenennen (einmalig)
+# Admin-User prüfen & umbenennen
 # ==================================================
 - name: Check if new admin user already exists
-  command: >
-    docker exec {{ xibo_db_container }}
-    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -sNe
-    "SELECT 1 FROM user WHERE userName='{{ xibo_admin_new }}';"
+  shell: |
+    docker exec {{ xibo_db_container }} \
+    mysql -N -s \
+    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+    -e "SELECT 1 FROM user WHERE userName='{{ xibo_admin_new }}';"
   register: admin_exists
   changed_when: false
 
-- name: Rename Xibo admin user
-  command: >
-    docker exec {{ xibo_db_container }}
-    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -e
-    "UPDATE user
-     SET userName='{{ xibo_admin_new }}'
-     WHERE userName='{{ xibo_admin_old }}';"
+- name: Rename default admin user
+  shell: |
+    docker exec {{ xibo_db_container }} \
+    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+    -e "UPDATE user SET userName='{{ xibo_admin_new }}'
+        WHERE userName='{{ xibo_admin_old }}';"
   when: admin_exists.stdout == ""
   changed_when: true
 
 # ==================================================
-# Admin-Passwort nur ändern, wenn Default ("password")
+# Passwort-Hash auslesen
 # ==================================================
-- name: Read current admin password hash
+- name: Get current password hash
   shell: |
     docker exec {{ xibo_db_container }} \
-    mysql -N -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+    mysql -N -s -r \
+    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
     -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_new }}';"
   register: current_hash
   changed_when: false
 
-- name: Check if password is default
-  copy:
-    dest: /tmp/check_xibo_password.py
-    mode: "0700"
-    content: |
-      import bcrypt
-      h = b'{{ current_hash.stdout }}'
-      print("true" if bcrypt.checkpw(b"password", h) else "false")
+# ==================================================
+# Hash-Typ erkennen (MD5 vs bcrypt)
+# ==================================================
+- name: Detect password hash type
+  set_fact:
+    password_is_bcrypt: "{{ current_hash.stdout.startswith('$2') }}"
 
-- name: Run password check
-  command: python3 /tmp/check_xibo_password.py
-  register: password_is_default
-  changed_when: false
+- name: Debug hash type
+  debug:
+    msg: >
+      Password hash type:
+      {{ 'bcrypt' if password_is_bcrypt else 'legacy (MD5)' }}
 
-- name: Remove password check script
-  file:
-    path: /tmp/check_xibo_password.py
-    state: absent
-
-- name: Generate bcrypt hash for new password
+# ==================================================
+# bcrypt erzeugen (nur wenn nötig)
+# ==================================================
+- name: Generate bcrypt hash
   shell: |
     python3 <<'EOF'
     import bcrypt
     print(bcrypt.hashpw(b"{{ xibo_admin_new }}", bcrypt.gensalt()).decode())
     EOF
   register: new_hash
+  when: not password_is_bcrypt
   changed_when: false
-  when: password_is_default.stdout == "true"
 
-- name: Update admin password
+# ==================================================
+# Passwort aktualisieren (MD5 → bcrypt)
+# ==================================================
+- name: Update admin password to bcrypt
   shell: |
     docker exec -i {{ xibo_db_container }} mysql \
       -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
@@ -179,22 +179,26 @@
     SET userPassword='{{ new_hash.stdout }}'
     WHERE userName='{{ xibo_admin_new }}';
     SQL
-  when: password_is_default.stdout == "true"
+  when: not password_is_bcrypt
   changed_when: true
 
 # ==================================================
-# Backup-State-Tabelle (für Change-Backups)
+# backup_state Tabelle
 # ==================================================
 - name: Ensure backup_state table exists
-  community.docker.docker_container_exec:
-    container: "{{ xibo_db_container }}"
-    command: >
-      mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -e "
-      CREATE TABLE IF NOT EXISTS backup_state (
-        id INT PRIMARY KEY,
-        db_hash CHAR(64),
-        media_hash CHAR(64)
-      );
-      INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
-      VALUES (1, '', '');
-      "
+  shell: |
+    docker exec {{ xibo_db_container }} mysql \
+      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
+    CREATE TABLE IF NOT EXISTS backup_state (
+      id INT PRIMARY KEY,
+      db_hash CHAR(64) NOT NULL,
+      media_hash CHAR(64) NOT NULL,
+      updated_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP
+    );
+    INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
+    VALUES (1, '', '');
+    SQL
+  changed_when: false
+
