@@ -154,3 +154,18 @@
     SQL
   when: password_is_default.stdout == "true"
   changed_when: true
+
+- name: Ensure backup_state table exists
+  community.docker.docker_container_exec:
+    container: "{{ xibo_db_container }}"
+    command: >
+      mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -e "
+      CREATE TABLE IF NOT EXISTS backup_state (
+        id INT PRIMARY KEY,
+        db_hash CHAR(64),
+        media_hash CHAR(64)
+      );
+      INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
+      VALUES (1, '', '');
+      "
+
