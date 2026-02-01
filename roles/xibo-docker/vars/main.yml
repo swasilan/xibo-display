@@ -1,36 +1,25 @@
 ---
-# Xibo CMS Docker Variablen
+xibo_base_path: /opt/xibo
 
-# MySQL-Zugang
-xibo_db_host: 127.0.0.1              # Host für die DB (bei Docker meist localhost oder Container-IP)
-xibo_db_port: 3306                   # Standard MySQL Port
-xibo_db_user: xibo                   # DB-Benutzer, der Xibo erstellt
-xibo_db_password: "xibopass"         # Passwort für den DB-Benutzer
-xibo_db_name: xibo                   # Name der Xibo-Datenbank
+xibo_env_file: config.env
 
-# Xibo Admin Benutzer
-xibo_admin_old: xibo_admin           # Der bestehende Benutzername
-xibo_admin_new: xibo                 # Neuer Benutzername, z.B. 'xibo'
+xibo_db_image: mysql:8.4
+xibo_db_container: xibo-db
+xibo_db_name: xibo
+xibo_db_user: xibo
+xibo_db_password: xibopass
+xibo_db_mem: 1g
 
-# Docker Container Namen
-xibo_cms_container: xibo-cms         # CMS Container-Name
-xibo_db_container: xibo-db           # MySQL Container-Name
+xibo_cms_image: ghcr.io/xibosignage/xibo-cms:release-4.4.0
+xibo_cms_container: xibo-cms
+xibo_cms_port_host: 8080
+xibo_cms_mem: 1g
 
-# Docker Images
-xibo_cms_image: xibosignage/xibo-cms:latest   # CMS Image
-xibo_db_image: mariadb:10.6                    # MariaDB Image
+xibo_xmr_image: ghcr.io/xibosignage/xibo-xmr:1.0
+xibo_xmr_container: xibo-xmr
+xibo_xmr_port: 9505
+xibo_xmr_mem: 256m
 
-# Docker Ports
-xibo_cms_port_host: 8080              # Host-Port für den CMS Webzugang
-xibo_cms_port_container: 80           # Container-Port für den CMS Webzugang
-xibo_db_port_host: 3306               # Host-Port für den DB Zugang
-xibo_db_port_container: 3306          # Container-Port für den DB Zugang
-
-# Docker Volumes
-xibo_db_volume: xibo-db-data           # Volumen für die Datenbank
-
-# Xibo CMS Path
-xibo_cms_path: /opt/xibo-docker/cms
-
-# Optionale CLI-Variablen, falls CLI genutzt werden kann
-xibo_cli_path: "/var/www/cms/xibo-cli"  # Pfad zur xibo-cli im Container, falls vorhanden
+xibo_memcached_container: xibo-memcached
+xibo_memcached_mem: 128m
+xibo_memcached_size: 64
