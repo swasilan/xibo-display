@@ -37,6 +37,7 @@
       VALUES (1, '', '');
 
 - name: Deploy Xibo Backup Script
+  become: yes
   ansible.builtin.template:
     src: backup_xibo.sh.j2
     dest: /opt/xibo-backup/backup_xibo.sh
@@ -56,3 +57,12 @@
       set -e
       LOGDIR="/opt/xibo-backup"
       find "$LOGDIR" -maxdepth 1 -type f -name "log_*.log" -mtime +30 -print -delete
+
+- name: Deploy cron job for automatic backup
+  become: yes
+  cron:
+    name: "Xibo Backup (change-based)"
+    user: xibo
+    minute: "0"
+    hour: "2"
+    job: "/opt/xibo-backup/backup_xibo.sh >> /opt/xibo-backup/logs/backup_$(date +\%F).log 2>&1"
