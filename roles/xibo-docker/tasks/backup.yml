@@ -1,6 +1,15 @@
 ---
 # tasks/backup.yml
 
+- name: Ensure Xibo backup base directory exists
+  become: yes
+  file:
+    path: /opt/xibo-backup
+    state: directory
+    owner: xibo
+    group: xibo
+    mode: '0755'
+
 - name: Erstelle Backup-Ordner
   become: yes
   file:
