@@ -8,6 +8,18 @@
     backup_dir: /opt/xibo-backup/backups
     cms_target_dir: /opt/xibo-docker/shared/cms
 
+- name: Ensure restore temp directory exists
+  file:
+    path: "{{ restore_tmp_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Ensure CMS target directory exists
+  file:
+    path: "{{ cms_target_dir }}"
+    state: directory
+    mode: "0755"
+    
 # --------------------------------------------------
 # Prüfen, ob Restore-Verzeichnisse existieren
 # --------------------------------------------------
