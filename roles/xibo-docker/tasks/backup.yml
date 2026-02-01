@@ -65,4 +65,5 @@
     user: xibo
     minute: "0"
     hour: "2"
-    job: "/opt/xibo-backup/backup_xibo.sh >> /opt/xibo-backup/logs/backup_$(date +\%F).log 2>&1"
+    job: '/opt/xibo-backup/backup_xibo.sh >> /opt/xibo-backup/logs/backup_$(date +%F).log 2>&1'
+
