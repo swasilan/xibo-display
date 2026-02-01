@@ -1,40 +1,60 @@
-version: "3.8"
+version: "2.1"
 
 services:
-  db:
-    image: {{ xibo_db_image }}
-    container_name: {{ xibo_db_container }}
-    restart: unless-stopped
+  cms-db:
+    image: {{ xibo_db_image | default("mysql:8.4") }}
+    container_name: {{ xibo_db_container | default("xibo-db") }}
+    restart: always
+    mem_limit: {{ xibo_db_mem | default("1g") }}
+    env_file: {{ xibo_env_file | default("config.env") }}
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: {{ xibo_db_name }}
       MYSQL_USER: {{ xibo_db_user }}
       MYSQL_PASSWORD: {{ xibo_db_password }}
-    command: --innodb_use_native_aio=0
-    ports:
-      - "{{ xibo_db_port_host }}:{{ xibo_db_port_container }}"
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
     volumes:
-      - {{ xibo_db_volume }}:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p{{ xibo_db_password }}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - {{ xibo_base_path | default("/opt/xibo") }}/shared/db:/var/lib/mysql:Z
 
-  cms:
-    image: {{ xibo_cms_image }}
-    container_name: {{ xibo_cms_container }}
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
+  cms-xmr:
+    image: {{ xibo_xmr_image | default("ghcr.io/xibosignage/xibo-xmr:1.0") }}
+    container_name: {{ xibo_xmr_container | default("xibo-xmr") }}
+    restart: always
+    mem_limit: {{ xibo_xmr_mem | default("256m") }}
     ports:
-      - "{{ xibo_cms_port_host }}:{{ xibo_cms_port_container }}"
+      - "{{ xibo_xmr_port | default("9505") }}:9505"
+    env_file: {{ xibo_env_file | default("config.env") }}
+
+  cms-memcached:
+    image: {{ xibo_memcached_image | default("memcached:alpine") }}
+    container_name: {{ xibo_memcached_container | default("xibo-memcached") }}
+    restart: always
+    mem_limit: {{ xibo_memcached_mem | default("128m") }}
+    command: memcached -m {{ xibo_memcached_size | default(64) }}
+
+  cms-web:
+    image: {{ xibo_cms_image }}
+    container_name: {{ xibo_cms_container | default("xibo-cms") }}
+    restart: always
+    mem_limit: {{ xibo_cms_mem | default("1g") }}
+    depends_on:
+      - cms-db
+      - cms-xmr
+      - cms-memcached
+    ports:
+      - "{{ xibo_cms_port_host }}:80"
+    env_file: {{ xibo_env_file | default("config.env") }}
     environment:
-      MYSQL_HOST: db
+      MYSQL_HOST: cms-db
       MYSQL_DATABASE: {{ xibo_db_name }}
       MYSQL_USER: {{ xibo_db_user }}
       MYSQL_PASSWORD: {{ xibo_db_password }}
-
-volumes:
-  {{ xibo_db_volume }}:
+      XMR_HOST: cms-xmr
+      CMS_USE_MEMCACHED: "true"
+      MEMCACHED_HOST: cms-memcached
+    volumes:
+      - {{ xibo_base_path | default("/opt/xibo") }}/shared/cms/library:/var/www/cms/library:Z
+      - {{ xibo_base_path | default("/opt/xibo") }}/shared/cms/custom:/var/www/cms/custom:Z
+      - {{ xibo_base_path | default("/opt/xibo") }}/shared/cms/web/theme/custom:/var/www/cms/web/theme/custom:Z
+      - {{ xibo_base_path | default("/opt/xibo") }}/shared/cms/web/userscripts:/var/www/cms/web/userscripts:Z
+      - {{ xibo_base_path | default("/opt/xibo") }}/shared/cms/ca-certs:/var/www/cms/ca-certs:Z
+      - {{ xibo_base_path | default("/opt/xibo") }}/shared/backup:/var/www/backup:Z
