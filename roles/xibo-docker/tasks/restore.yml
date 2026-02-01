@@ -44,17 +44,17 @@
 # --------------------------------------------------
 # Backup finden
 # --------------------------------------------------
+- stat:
+    path: /opt/xibo-backup/backups
+  register: backup_dir
+
 - name: Find available Xibo backups
   find:
-    paths: "{{ backup_dir }}"
+    paths: "/opt/xibo-backup/backups"
     patterns: "xibo_backup_*.zip"
     recurse: no
   register: found_backups
-
-- name: Abort if no backups found
-  fail:
-    msg: "❌ Keine Xibo Backups gefunden in {{ backup_dir }}"
-  when: found_backups.files | length == 0
+  when: backup_dir.stat.exists
 
 - name: Show available backups
   debug:
