@@ -49,6 +49,19 @@
     - shared/cms/web/userscripts
     - shared/cms/ca-certs
 
+- name: Ensure config.env exists
+  ansible.builtin.copy:
+    dest: /opt/xibo-docker/config.env
+    owner: xibo
+    group: xibo
+    mode: '0644'
+    content: |
+      MYSQL_ROOT_PASSWORD=rootpass
+      MYSQL_DATABASE={{ xibo_db_name }}
+      MYSQL_USER={{ xibo_db_user }}
+      MYSQL_PASSWORD={{ xibo_db_password }}
+      XMR_HOST=cms-xmr
+
 # --------------------------------------------------
 # Docker Compose
 # --------------------------------------------------
