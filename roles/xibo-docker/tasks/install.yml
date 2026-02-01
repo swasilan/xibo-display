@@ -1,86 +1,81 @@
 ---
-- name: Cron installieren
-  ansible.builtin.package:
-    name: cron
-    state: present
-
-- name: Installiere Backup-Tools
+# --------------------------------------------------
+# Basis & Abhängigkeiten
+# --------------------------------------------------
+- name: Installiere benötigte Pakete
+  become: yes
   apt:
     name:
+      - cron
       - ca-certificates
       - msmtp
-      - msmtp-mta   # optional, sorgt dafür dass 'mail' funktioniert
+      - msmtp-mta
       - mailutils
       - python3-pymysql
+      - python3-bcrypt
       - rsync
       - zip
-    state: present
-    update_cache: yes
-
-- name: Install Python bcrypt via apt
-  apt:
-    name: python3-bcrypt
-    state: present
-  become: yes
-
-- name: Ensure Docker is installed
-  apt:
-    name:
       - docker.io
       - docker-compose
     state: present
     update_cache: yes
 
 - name: Ensure Docker service is running
+  become: yes
   service:
     name: docker
     state: started
     enabled: yes
 
-- name: Create Xibo directories
+# --------------------------------------------------
+# Verzeichnisstruktur
+# --------------------------------------------------
+- name: Create Xibo directory structure
+  become: yes
   file:
     path: "/opt/xibo-docker/{{ item }}"
     state: directory
     owner: xibo
     group: xibo
-    mode: '0755'
+    mode: "0755"
   loop:
-    - cms
-    - db
+    - shared
+    - shared/db
+    - shared/backup
+    - shared/cms
+    - shared/cms/library
+    - shared/cms/custom
+    - shared/cms/web/theme/custom
+    - shared/cms/web/userscripts
+    - shared/cms/ca-certs
 
-- name: Copy Docker Compose file for Xibo CMS
+# --------------------------------------------------
+# Docker Compose
+# --------------------------------------------------
+- name: Deploy Docker Compose file for Xibo
+  become: yes
   template:
-    src: "docker-compose.yml.j2"
-    dest: "/opt/xibo-docker/docker-compose.yml"
+    src: docker-compose.yml.j2
+    dest: /opt/xibo-docker/docker-compose.yml
     owner: xibo
     group: xibo
-    mode: '0644'
+    mode: "0644"
+  notify: Restart Xibo stack
 
-- name: Prüfe, ob Xibo DB Container existiert
-  community.docker.docker_container_info:
-    name: "{{ xibo_db_container }}"
-  register: db_container_info
-  ignore_errors: true
+# --------------------------------------------------
+# Xibo Stack starten
+# --------------------------------------------------
+- name: Start Xibo stack (idempotent)
+  become: yes
+  become_user: xibo
+  command: docker compose up -d
+  args:
+    chdir: /opt/xibo-docker
 
-- name: Starte DB via Docker Compose nur, wenn nicht vorhanden
-  community.docker.docker_compose:
-    project_src: /opt/xibo-docker
-    restarted: false
-  when: db_container_info.containers is not defined or db_container_info.containers | length == 0
-
-- name: Prüfe, ob Xibo CMS Container existiert
-  community.docker.docker_container_info:
-    name: "{{ xibo_cms_container }}"
-  register: cms_container_info
-  ignore_errors: true
-
-- name: Starte Xibo CMS via Docker Compose nur, wenn nicht vorhanden
-  community.docker.docker_compose:
-    project_src: /opt/xibo-docker
-    restarted: false
-  when: cms_container_info.containers is not defined or cms_container_info.containers | length == 0
-
-- name: Warten, bis DB hoch ist
+# --------------------------------------------------
+# Warten bis DB healthy
+# --------------------------------------------------
+- name: Wait until Xibo DB container is healthy
   community.docker.docker_container_info:
     name: "{{ xibo_db_container }}"
   register: db_info
@@ -88,98 +83,74 @@
   retries: 30
   delay: 10
 
-- name: Debug user_table_check
-  debug:
-    var: user_table_check
-
-- name: Prüfe, ob Benutzer '{{ xibo_admin_new }}' schon existiert
+# --------------------------------------------------
+# Admin-User prüfen
+# --------------------------------------------------
+- name: Check if admin user already renamed
   command: >
     docker exec {{ xibo_db_container }}
     mysql -u {{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -sNe
-    "SELECT 1 FROM xibo.user WHERE username='{{ xibo_admin_new }}';"
+    "SELECT 1 FROM user WHERE userName='{{ xibo_admin_new }}';"
   register: xibo_user_check
   changed_when: false
 
-- name: Ändere Xibo CMS Admin-Benutzername in der Datenbank
+- name: Rename Xibo admin user
   command: >
     docker exec {{ xibo_db_container }}
     mysql -u {{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -e
-    "UPDATE xibo.user SET username='{{ xibo_admin_new }}' WHERE username='{{ xibo_admin_old }}';"
+    "UPDATE user SET userName='{{ xibo_admin_new }}'
+     WHERE userName='{{ xibo_admin_old }}';"
   when: xibo_user_check.stdout == ""
-  register: xibo_user_rename
-  changed_when: xibo_user_rename.rc == 0
+  changed_when: true
 
-- name: Temporarily check and update Xibo admin password
-  become: yes
-  vars:
-    xibo_admin_user: "{{ xibo_admin_new }}"    # Admin Username
-    new_password: "{{ xibo_admin_new }}"                       # Neues Passwort
-    default_password: "password"               # Default Passwort
-  block:
+# --------------------------------------------------
+# Admin-Passwort nur ändern, wenn Default
+# --------------------------------------------------
+- name: Get current password hash
+  shell: |
+    docker exec {{ xibo_db_container }} \
+    mysql -N -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+    -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_new }}';"
+  register: current_hash
+  changed_when: false
 
-    - name: Get current password hash from DB
-      ansible.builtin.shell: |
-        docker exec {{ xibo_db_container }} \
-        mysql -N -u{{ xibo_db_user }} -p{{ xibo_db_password }} xibo \
-        -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_user }}';"
-      register: current_hash
-      changed_when: false
+- name: Check if password is default
+  copy:
+    dest: /tmp/check_xibo_password.py
+    mode: "0700"
+    content: |
+      import bcrypt
+      db_hash = b'{{ current_hash.stdout }}'
+      default = b'password'
+      print("true" if bcrypt.checkpw(default, db_hash) else "false")
 
-    - name: Create temporary Python script to check password
-      ansible.builtin.copy:
-        dest: "/tmp/check_xibo_password.py"
-        content: |
-          #!/usr/bin/env python3
-          import bcrypt
-          hash_from_db = b'{{ current_hash.stdout }}'
-          default_password = b'{{ default_password }}'
-          if bcrypt.checkpw(default_password, hash_from_db):
-              print("true")
-          else:
-              print("false")
-        mode: '0700'
+- name: Run password check
+  command: python3 /tmp/check_xibo_password.py
+  register: password_is_default
+  changed_when: false
 
-    - name: Run temporary Python script
-      ansible.builtin.command: python3 /tmp/check_xibo_password.py
-      register: password_is_default
-      changed_when: false
+- name: Remove password check script
+  file:
+    path: /tmp/check_xibo_password.py
+    state: absent
 
-    - name: Remove temporary Python script
-      file:
-        path: /tmp/check_xibo_password.py
-        state: absent
+- name: Generate bcrypt hash for new password
+  shell: |
+    python3 <<'EOF'
+    import bcrypt
+    print(bcrypt.hashpw(b"{{ xibo_admin_new }}", bcrypt.gensalt()).decode())
+    EOF
+  register: new_hash
+  changed_when: false
+  when: password_is_default.stdout == "true"
 
-    - name: Generate bcrypt hash for new password (safe)
-      ansible.builtin.shell: |
-        python3 <<'EOF'
-        import bcrypt
-        password = b"{{ new_password }}"
-        hashed = bcrypt.hashpw(password, bcrypt.gensalt())
-        print(hashed.decode())
-        EOF
-      register: new_hash
-      changed_when: false
-      when: password_is_default.stdout == "true"
-
-    - name: Debug bcrypt hash length
-      ansible.builtin.debug:
-        msg:
-          - "Hash: {{ new_hash.stdout }}"
-          - "Length: {{ new_hash.stdout | length }}"
-      when: password_is_default.stdout == "true"
-
-    - name: Update Xibo admin password safely (no truncation)
-      ansible.builtin.shell: |
-        docker exec -i {{ xibo_db_container }} mysql \
-          -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
-        UPDATE user
-        SET userPassword='{{ new_hash.stdout }}'
-        WHERE userName='{{ xibo_admin_user }}';
-        SQL
-      when: password_is_default.stdout == "true"
-      changed_when: true
-
-    - name: Debug password status
-      ansible.builtin.debug:
-        msg: "Password changed: {{ 'yes' if password_is_default.stdout == 'true' else 'no, already modified' }}"
-
+- name: Update admin password
+  shell: |
+    docker exec -i {{ xibo_db_container }} mysql \
+      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
+    UPDATE user
+    SET userPassword='{{ new_hash.stdout }}'
+    WHERE userName='{{ xibo_admin_new }}';
+    SQL
+  when: password_is_default.stdout == "true"
+  changed_when: true
