@@ -1,7 +1,8 @@
 ---
 # --------------------------------------------------
-# Variablen definieren
+# Restore-Playbook für Xibo
 # --------------------------------------------------
+
 - name: Set restore paths
   set_fact:
     restore_tmp_dir: /tmp/xibo_restore
@@ -9,41 +10,28 @@
     cms_target_dir: /opt/xibo-docker/shared/cms
 
 # --------------------------------------------------
-# Prüfen, ob Restore-Verzeichnisse existieren
+# Verzeichnisse sicherstellen
 # --------------------------------------------------
+- name: Ensure restore temp directory exists
+  file:
+    path: "{{ restore_tmp_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Ensure CMS target directory exists
+  file:
+    path: "{{ cms_target_dir }}"
+    state: directory
+    mode: "0755"
+
 - name: Ensure backup directory exists
   file:
-    path: /opt/xibo-backup/backups
-    state: directory
-    owner: xibo
-    group: xibo
-    mode: '0755'
-
-- name: Ensure CMS directory exists
-  file:
-    path: /opt/xibo-docker/shared/cms
-    state: directory
-    owner: xibo
-    group: xibo
-    mode: '0755'
-
-- name: Check if backup directory exists
-  stat:
     path: "{{ backup_dir }}"
-  register: backup_dir_stat
-
-- name: Check if CMS target directory exists
-  stat:
-    path: "{{ cms_target_dir }}"
-  register: cms_dir_stat
-
-- name: Abort if required directories do not exist
-  fail:
-    msg: "❌ Restore-Verzeichnisse existieren nicht. Restore wird abgebrochen."
-  when: not (backup_dir_stat.stat.exists and cms_dir_stat.stat.exists)
+    state: directory
+    mode: "0755"
 
 # --------------------------------------------------
-# Backup finden
+# Backups finden
 # --------------------------------------------------
 - name: Find available Xibo backups
   find:
@@ -51,12 +39,14 @@
     patterns: "xibo_backup_*.zip"
     recurse: no
   register: found_backups
-  when: backup_dir_stat.stat.exists
 
-- name: Abort if no backups found
-  fail:
-    msg: "❌ Keine Xibo Backups gefunden in {{ backup_dir }}"
-  when: backup_dir_stat.stat.exists and (found_backups.files | length == 0)
+- name: Skip restore if no backups found
+  debug:
+    msg: "⚠️ Keine Backups gefunden in {{ backup_dir }}, Restore wird übersprungen."
+  when: found_backups.files | length == 0
+  # Mit "meta: end_play" beenden wir den Play nur, falls kein Backup gefunden wurde
+  meta: end_play
+  when: found_backups.files | length == 0
 
 - name: Show available backups
   debug:
@@ -65,7 +55,6 @@
       {% for f in found_backups.files | sort(attribute='mtime', reverse=true) %}
       - {{ loop.index }}: {{ f.path }} ({{ f.mtime | to_datetime }})
       {% endfor %}
-  when: backup_dir_stat.stat.exists and (found_backups.files | length > 0)
 
 # --------------------------------------------------
 # Benutzer fragen
@@ -77,7 +66,6 @@
       Möchtest du ein Backup wiederherstellen?
       Tippe 'yes' zum Fortfahren:
   register: restore_confirm
-  when: backup_dir_stat.stat.exists and (found_backups.files | length > 0)
 
 - name: Abort restore
   fail:
@@ -89,7 +77,6 @@
     prompt: |
       Bitte Nummer des Backups angeben (1–{{ found_backups.files | length }}):
   register: backup_choice
-  when: restore_confirm.user_input == "yes"
 
 - name: Validate backup selection
   fail:
@@ -101,22 +88,10 @@
     selected_backup: >-
       {{ (found_backups.files | sort(attribute='mtime', reverse=true))
          [backup_choice.user_input | int - 1].path }}
-  when: restore_confirm.user_input == "yes"
 
 - name: Confirm selected backup
   debug:
     msg: "✅ Gewähltes Backup: {{ selected_backup }}"
-  when: restore_confirm.user_input == "yes"
-
-# --------------------------------------------------
-# Restore vorbereiten
-# --------------------------------------------------
-- name: Ensure restore temp directory exists
-  file:
-    path: "{{ restore_tmp_dir }}"
-    state: directory
-    mode: "0755"
-  when: restore_confirm.user_input == "yes"
 
 # --------------------------------------------------
 # Backup entpacken
@@ -126,7 +101,6 @@
     src: "{{ selected_backup }}"
     dest: "{{ restore_tmp_dir }}"
     remote_src: yes
-  when: restore_confirm.user_input == "yes"
 
 # --------------------------------------------------
 # Datenbank Restore
@@ -135,14 +109,12 @@
   command: >
     docker cp {{ restore_tmp_dir }}/db.sql
     {{ xibo_db_container }}:/db.sql
-  when: restore_confirm.user_input == "yes"
 
 - name: Restore database
   shell: |
     docker exec {{ xibo_db_container }} \
       mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} < /db.sql
   changed_when: true
-  when: restore_confirm.user_input == "yes"
 
 # --------------------------------------------------
 # CMS Dateien Restore
@@ -153,7 +125,6 @@
       {{ restore_tmp_dir }}/cms/ \
       {{ cms_target_dir }}/
   changed_when: true
-  when: restore_confirm.user_input == "yes"
 
 # --------------------------------------------------
 # Cleanup
@@ -162,9 +133,7 @@
   file:
     path: "{{ restore_tmp_dir }}"
     state: absent
-  when: restore_confirm.user_input == "yes"
 
 - name: Restore finished
   debug:
     msg: "🎉 Restore erfolgreich abgeschlossen."
-  when: restore_confirm.user_input == "yes"
