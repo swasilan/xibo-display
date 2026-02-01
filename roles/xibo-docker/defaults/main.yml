@@ -1,5 +1,9 @@
-xibo_cms_version: "3.2.6"
-xibo_db_password: "changeme"
-xibo_web_port: 8080
-xibo_db_port: 3306
-xibo_data_dir: "/opt/xibo"
+# Xibo Admin Defaults
+xibo_admin_old: "admin"
+xibo_admin_new: "xibo"
+
+# DB Defaults (optional, aber sinnvoll)
+xibo_db_name: xibo
+xibo_db_user: xibo
+xibo_db_password: xibopass
+xibo_db_container: xibo-db
