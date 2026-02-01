@@ -40,11 +40,12 @@
     recurse: no
   register: found_backups
 
-- name: Skip restore if no backups found
+- name: Warnung, dass keine Backups gefunden wurden
   debug:
     msg: "⚠️ Keine Backups gefunden in {{ backup_dir }}, Restore wird übersprungen."
   when: found_backups.files | length == 0
-  # Mit "meta: end_play" beenden wir den Play nur, falls kein Backup gefunden wurde
+
+- name: Skip restore because no backups exist
   meta: end_play
   when: found_backups.files | length == 0
 
