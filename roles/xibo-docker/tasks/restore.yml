@@ -1,6 +1,11 @@
 # --------------------------------------------------
 # Restore vorbereiten
 # --------------------------------------------------
+vars:
+  restore_tmp_dir: /tmp/xibo_restore
+  backup_dir: /opt/xibo-backup/backups
+  cms_target_dir: /opt/xibo-docker/shared/cms
+
 - name: Check if restore temp directory exists
   stat:
     path: "{{ restore_tmp_dir }}"
