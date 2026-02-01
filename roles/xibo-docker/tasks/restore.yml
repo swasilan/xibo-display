@@ -30,7 +30,7 @@
 
 - name: Find available Xibo backups
   find:
-    paths: /opt/xibo-backup/backups
+    paths: "/opt/xibo-backup/backups"
     patterns: "xibo_backup_*.zip"
     recurse: no
   register: found_backups
