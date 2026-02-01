@@ -1,4 +1,14 @@
 ---
+- name: Validate required variables
+  assert:
+    that:
+      - xibo_admin_new is defined
+      - xibo_admin_old is defined
+      - xibo_db_name is defined
+      - xibo_db_user is defined
+      - xibo_db_password is defined
+    fail_msg: "Required Xibo variables are missing"
+
 # ==================================================
 # Basis & Abhängigkeiten
 # ==================================================
