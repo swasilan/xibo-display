@@ -2,6 +2,7 @@
 # tasks/backup.yml
 
 - name: Erstelle Backup-Ordner
+  become: yes
   file:
     path: /opt/xibo-backup/backups
     state: directory
