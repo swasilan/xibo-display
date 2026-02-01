@@ -23,20 +23,23 @@
 # --------------------------------------------------
 # Prüfen, ob Restore-Verzeichnisse existieren
 # --------------------------------------------------
-- name: Check if restore temp directory exists
+- name: Check if backup directory exists
   stat:
-    path: "{{ restore_tmp_dir }}"
-  register: restore_tmp_dir_stat
+    path: /opt/xibo-backup/backups
+  register: backup_dir
 
-- name: Check if CMS target directory exists
-  stat:
-    path: "{{ cms_target_dir }}"
-  register: cms_target_dir_stat
+- name: Find available Xibo backups
+  find:
+    paths: /opt/xibo-backup/backups
+    patterns: "xibo_backup_*.zip"
+    recurse: no
+  register: found_backups
+  when: backup_dir.stat.exists
 
-- name: Abort if required directories do not exist
+- name: Abort if no backups found
   fail:
-    msg: "❌ Restore-Verzeichnisse existieren nicht. Restore wird abgebrochen."
-  when: not restore_tmp_dir_stat.stat.exists or not cms_target_dir_stat.stat.exists
+    msg: "❌ Keine Xibo Backups gefunden in /opt/xibo-backup/backups"
+  when: backup_dir.stat.exists and found_backups.files | length == 0
 
 # --------------------------------------------------
 # Backup finden
