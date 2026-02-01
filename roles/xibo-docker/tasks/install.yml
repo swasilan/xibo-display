@@ -1,8 +1,8 @@
 ---
-# --------------------------------------------------
+# ==================================================
 # Basis & Abhängigkeiten
-# --------------------------------------------------
-- name: Installiere benötigte Pakete
+# ==================================================
+- name: Install required packages
   become: yes
   apt:
     name:
@@ -27,9 +27,9 @@
     state: started
     enabled: yes
 
-# --------------------------------------------------
+# ==================================================
 # Verzeichnisstruktur
-# --------------------------------------------------
+# ==================================================
 - name: Create Xibo directory structure
   become: yes
   file:
@@ -49,23 +49,27 @@
     - shared/cms/web/userscripts
     - shared/cms/ca-certs
 
+# ==================================================
+# config.env (required by compose)
+# ==================================================
 - name: Ensure config.env exists
-  ansible.builtin.copy:
+  become: yes
+  copy:
     dest: /opt/xibo-docker/config.env
     owner: xibo
     group: xibo
-    mode: '0644'
+    mode: "0644"
     content: |
-      MYSQL_ROOT_PASSWORD=rootpass
+      MYSQL_ROOT_PASSWORD={{ xibo_db_root_password | default('rootpass') }}
       MYSQL_DATABASE={{ xibo_db_name }}
       MYSQL_USER={{ xibo_db_user }}
       MYSQL_PASSWORD={{ xibo_db_password }}
       XMR_HOST=cms-xmr
 
-# --------------------------------------------------
+# ==================================================
 # Docker Compose
-# --------------------------------------------------
-- name: Deploy Docker Compose file for Xibo
+# ==================================================
+- name: Deploy docker-compose.yml
   become: yes
   template:
     src: docker-compose.yml.j2
@@ -73,51 +77,54 @@
     owner: xibo
     group: xibo
     mode: "0644"
-  notify: Restart Xibo stack
 
-# --------------------------------------------------
-# Xibo Stack starten
-# --------------------------------------------------
-- name: Start Xibo stack (idempotent)
+# ==================================================
+# Xibo Stack starten (idempotent)
+# ==================================================
+- name: Start Xibo stack
   community.docker.docker_compose:
     project_src: /opt/xibo-docker
     state: present
 
-# --------------------------------------------------
-# Warten bis DB healthy
-# --------------------------------------------------
-- name: Wait until Xibo DB container is healthy
-  community.docker.docker_container_info:
-    name: "{{ xibo_db_container }}"
-  register: db_info
-  until: db_info.container.State.Health.Status == "healthy"
-  retries: 30
-  delay: 10
-
-# --------------------------------------------------
-# Admin-User prüfen
-# --------------------------------------------------
-- name: Check if admin user already renamed
+# ==================================================
+# Warten bis MySQL erreichbar ist (robust!)
+# ==================================================
+- name: Wait until MySQL responds
   command: >
     docker exec {{ xibo_db_container }}
-    mysql -u {{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -sNe
+    mysqladmin ping
+    -u{{ xibo_db_user }} -p{{ xibo_db_password }}
+  register: mysql_ping
+  until: mysql_ping.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+# ==================================================
+# Admin-User umbenennen (einmalig)
+# ==================================================
+- name: Check if new admin user already exists
+  command: >
+    docker exec {{ xibo_db_container }}
+    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -sNe
     "SELECT 1 FROM user WHERE userName='{{ xibo_admin_new }}';"
-  register: xibo_user_check
+  register: admin_exists
   changed_when: false
 
 - name: Rename Xibo admin user
   command: >
     docker exec {{ xibo_db_container }}
-    mysql -u {{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -e
-    "UPDATE user SET userName='{{ xibo_admin_new }}'
+    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} -e
+    "UPDATE user
+     SET userName='{{ xibo_admin_new }}'
      WHERE userName='{{ xibo_admin_old }}';"
-  when: xibo_user_check.stdout == ""
+  when: admin_exists.stdout == ""
   changed_when: true
 
-# --------------------------------------------------
-# Admin-Passwort nur ändern, wenn Default
-# --------------------------------------------------
-- name: Get current password hash
+# ==================================================
+# Admin-Passwort nur ändern, wenn Default ("password")
+# ==================================================
+- name: Read current admin password hash
   shell: |
     docker exec {{ xibo_db_container }} \
     mysql -N -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
@@ -131,9 +138,8 @@
     mode: "0700"
     content: |
       import bcrypt
-      db_hash = b'{{ current_hash.stdout }}'
-      default = b'password'
-      print("true" if bcrypt.checkpw(default, db_hash) else "false")
+      h = b'{{ current_hash.stdout }}'
+      print("true" if bcrypt.checkpw(b"password", h) else "false")
 
 - name: Run password check
   command: python3 /tmp/check_xibo_password.py
@@ -166,6 +172,9 @@
   when: password_is_default.stdout == "true"
   changed_when: true
 
+# ==================================================
+# Backup-State-Tabelle (für Change-Backups)
+# ==================================================
 - name: Ensure backup_state table exists
   community.docker.docker_container_exec:
     container: "{{ xibo_db_container }}"
@@ -179,4 +188,3 @@
       INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
       VALUES (1, '', '');
       "
-
