@@ -230,8 +230,11 @@
 # ==================================================
 - name: Ensure backup_state table exists
   shell: |
-    docker exec {{ xibo_db_container }} mysql \
-      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
+    docker exec -i {{ xibo_db_container }} \
+      mysql \
+      -u{{ xibo_db_user }} \
+      -p{{ xibo_db_password }} \
+      {{ xibo_db_name }} <<'SQL'
     CREATE TABLE IF NOT EXISTS backup_state (
       id INT PRIMARY KEY,
       db_hash CHAR(64) NOT NULL,
@@ -240,8 +243,10 @@
         DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP
     );
+
     INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
     VALUES (1, '', '');
     SQL
   changed_when: false
+
 
