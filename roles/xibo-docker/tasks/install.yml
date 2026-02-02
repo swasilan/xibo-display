@@ -151,12 +151,12 @@
 # ==================================================
 # Passwort-Hash auslesen
 # ==================================================
-- name: Get current password hash
-  shell: >
-    docker exec {{ xibo_db_container }}
-    mysql -N -s
-    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-    -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_new }}';"
+- name: Read current password hash
+  shell: |
+    docker exec {{ xibo_db_container }} \
+      mysql -N -s \
+      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+      -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_new }}';"
   register: current_hash
   changed_when: false
 
