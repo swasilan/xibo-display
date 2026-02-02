@@ -215,13 +215,14 @@
 # ==================================================
 # Passwort aktualisieren (MD5 → bcrypt)
 # ==================================================
-- name: Update admin password to bcrypt(xibo)
-  shell: >
-    docker exec {{ xibo_db_container }}
-    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-    -e "UPDATE user SET userPassword='{{ new_hash.stdout }}'
-        WHERE userName='{{ xibo_admin_new }}';"
-  when: password_is_default.stdout == "true"
+- name: Set admin password to bcrypt(xibo)
+  shell: |
+    docker exec -i {{ xibo_db_container }} mysql \
+      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
+    UPDATE user
+    SET userPassword='{{ new_hash.stdout }}'
+    WHERE userName='xibo';
+    SQL
   changed_when: true
 
 # ==================================================
