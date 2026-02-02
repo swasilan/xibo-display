@@ -1,3 +1,38 @@
+---
+# --------------------------------------------------
+# Restore-Playbook für Xibo
+# --------------------------------------------------
+
+# --------------------------------------------------
+# Variablen definieren
+# --------------------------------------------------
+- name: Set restore paths
+  set_fact:
+    restore_tmp_dir: /tmp/xibo_restore
+    backup_dir: /opt/xibo-backup/backups
+    cms_target_dir: /opt/xibo-docker/shared/cms
+
+# --------------------------------------------------
+# Verzeichnisse sicherstellen
+# --------------------------------------------------
+- name: Ensure restore temp directory exists
+  file:
+    path: "{{ restore_tmp_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Ensure CMS target directory exists
+  file:
+    path: "{{ cms_target_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Ensure backup directory exists
+  file:
+    path: "{{ backup_dir }}"
+    state: directory
+    mode: "0755"
+
 # --------------------------------------------------
 # Backups finden
 # --------------------------------------------------
@@ -8,63 +43,105 @@
     recurse: no
   register: found_backups
 
-# --------------------------------------------------
-# Warnung, wenn keine Backups gefunden wurden
-# --------------------------------------------------
+- name: Set fact if backups exist
+  set_fact:
+    backups_exist: "{{ found_backups.files | length > 0 }}"
+
 - name: Warnung, dass keine Backups gefunden wurden
   debug:
     msg: "⚠️ Keine Backups gefunden in {{ backup_dir }}, Restore wird übersprungen."
-  when: found_backups.files | length == 0
+  when: not backups_exist
 
 # --------------------------------------------------
-# Restore-Tasks nur ausführen, wenn Backups existieren
+# Backup nur wiederherstellen, wenn Backups existieren
 # --------------------------------------------------
-- name: Show available backups
-  debug:
-    msg: |
-      Verfügbare Backups:
-      {% for f in found_backups.files | sort(attribute='mtime', reverse=true) %}
-      - {{ loop.index }}: {{ f.path }} ({{ f.mtime | to_datetime }})
-      {% endfor %}
-  when: found_backups.files | length > 0
+- block:
 
-- name: Ask if restore should be executed
-  pause:
-    prompt: |
-      ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
-      Möchtest du ein Backup wiederherstellen?
-      Tippe 'yes' zum Fortfahren:
-  register: restore_confirm
-  when: found_backups.files | length > 0
+    - name: Show available backups
+      debug:
+        msg: |
+          Verfügbare Backups:
+          {% for f in found_backups.files | sort(attribute='mtime', reverse=true) %}
+          - {{ loop.index }}: {{ f.path }} ({{ f.mtime | to_datetime }})
+          {% endfor %}
 
-- name: Abort restore
-  fail:
-    msg: "Restore vom Benutzer abgebrochen."
-  when: found_backups.files | length > 0 and restore_confirm.user_input != "yes"
+    - name: Ask if restore should be executed
+      pause:
+        prompt: |
+          ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
+          Möchtest du ein Backup wiederherstellen?
+          Tippe 'yes' zum Fortfahren:
+      register: restore_confirm
 
-- name: Ask which backup to restore
-  pause:
-    prompt: |
-      Bitte Nummer des Backups angeben (1–{{ found_backups.files | length }}):
-  register: backup_choice
-  when: found_backups.files | length > 0
+    - name: Abort restore if user declines
+      fail:
+        msg: "Restore vom Benutzer abgebrochen."
+      when: restore_confirm.user_input != "yes"
 
-- name: Validate backup selection
-  fail:
-    msg: "Ungültige Auswahl."
-  when: found_backups.files | length > 0 and
-        (backup_choice.user_input | int < 1 or backup_choice.user_input | int > found_backups.files | length)
+    - name: Ask which backup to restore
+      pause:
+        prompt: |
+          Bitte Nummer des Backups angeben (1–{{ found_backups.files | length }}):
+      register: backup_choice
 
-- name: Select chosen backup
-  set_fact:
-    selected_backup: >-
-      {{ (found_backups.files | sort(attribute='mtime', reverse=true))
-         [backup_choice.user_input | int - 1].path }}
-  when: found_backups.files | length > 0
+    - name: Validate backup selection
+      fail:
+        msg: "Ungültige Auswahl."
+      when: backup_choice.user_input | int < 1 or backup_choice.user_input | int > found_backups.files | length
 
-- name: Unarchive selected backup
-  unarchive:
-    src: "{{ selected_backup }}"
-    dest: "{{ restore_tmp_dir }}"
-    remote_src: yes
-  when: found_backups.files | length > 0
+    - name: Select chosen backup
+      set_fact:
+        selected_backup: >-
+          {{ (found_backups.files | sort(attribute='mtime', reverse=true))
+             [backup_choice.user_input | int - 1].path }}
+
+    - name: Confirm selected backup
+      debug:
+        msg: "✅ Gewähltes Backup: {{ selected_backup }}"
+
+    # --------------------------------------------------
+    # Backup entpacken
+    # --------------------------------------------------
+    - name: Unarchive selected backup
+      unarchive:
+        src: "{{ selected_backup }}"
+        dest: "{{ restore_tmp_dir }}"
+        remote_src: yes
+
+    # --------------------------------------------------
+    # Datenbank Restore
+    # --------------------------------------------------
+    - name: Copy DB dump into DB container
+      command: >
+        docker cp {{ restore_tmp_dir }}/db.sql
+        {{ xibo_db_container }}:/db.sql
+
+    - name: Restore database
+      shell: |
+        docker exec {{ xibo_db_container }} \
+          mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} < /db.sql
+      changed_when: true
+
+    # --------------------------------------------------
+    # CMS Dateien Restore
+    # --------------------------------------------------
+    - name: Restore CMS files
+      shell: |
+        rsync -a --delete \
+          {{ restore_tmp_dir }}/cms/ \
+          {{ cms_target_dir }}/
+      changed_when: true
+
+    # --------------------------------------------------
+    # Cleanup
+    # --------------------------------------------------
+    - name: Cleanup restore temp directory
+      file:
+        path: "{{ restore_tmp_dir }}"
+        state: absent
+
+    - name: Restore finished
+      debug:
+        msg: "🎉 Restore erfolgreich abgeschlossen."
+
+  when: backups_exist
