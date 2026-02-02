@@ -112,9 +112,6 @@
 # ==================================================
 # Admin-User prüfen & umbenennen
 # ==================================================
-# --------------------------------------------------
-# Xibo Admin User umbenennen (nur wenn noch default)
-# --------------------------------------------------
 - name: Check if default admin user xibo_admin exists
   shell: >
     docker exec {{ xibo_db_container }}
@@ -155,10 +152,10 @@
 # Passwort-Hash auslesen
 # ==================================================
 - name: Get current password hash
-  shell: |
-    docker exec {{ xibo_db_container }} \
-    mysql -N -s -r \
-    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+  shell: >
+    docker exec {{ xibo_db_container }}
+    mysql -N -s
+    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
     -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_new }}';"
   register: current_hash
   changed_when: false
@@ -166,41 +163,65 @@
 # ==================================================
 # Hash-Typ erkennen (MD5 vs bcrypt)
 # ==================================================
-- name: Detect password hash type
-  set_fact:
-    password_is_bcrypt: "{{ current_hash.stdout.startswith('$2') }}"
+- name: Check if password equals default "password"
+  copy:
+    dest: /tmp/check_xibo_password.py
+    mode: "0700"
+    content: |
+      import bcrypt, hashlib, sys
 
-- name: Debug hash type
-  debug:
-    msg: >
-      Password hash type:
-      {{ 'bcrypt' if password_is_bcrypt else 'legacy (MD5)' }}
+      h = "{{ current_hash.stdout }}".strip()
+
+      # MD5 check
+      if len(h) == 32:
+          if h == hashlib.md5(b"password").hexdigest():
+              print("true")
+              sys.exit(0)
+
+      # bcrypt check
+      if h.startswith("$2"):
+          try:
+              if bcrypt.checkpw(b"password", h.encode()):
+                  print("true")
+                  sys.exit(0)
+          except ValueError:
+              pass
+
+      print("false")
+
+- name: Run password check
+  command: python3 /tmp/check_xibo_password.py
+  register: password_is_default
+  changed_when: false
+
+- name: Remove password check script
+  file:
+    path: /tmp/check_xibo_password.py
+    state: absent
 
 # ==================================================
 # bcrypt erzeugen (nur wenn nötig)
 # ==================================================
-- name: Generate bcrypt hash
+- name: Generate bcrypt hash for new password
   shell: |
     python3 <<'EOF'
     import bcrypt
-    print(bcrypt.hashpw(b"{{ xibo_admin_new }}", bcrypt.gensalt()).decode())
+    print(bcrypt.hashpw(b"xibo", bcrypt.gensalt()).decode())
     EOF
   register: new_hash
-  when: not password_is_bcrypt
+  when: password_is_default.stdout == "true"
   changed_when: false
 
 # ==================================================
 # Passwort aktualisieren (MD5 → bcrypt)
 # ==================================================
-- name: Update admin password to bcrypt
-  shell: |
-    docker exec -i {{ xibo_db_container }} mysql \
-      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
-    UPDATE user
-    SET userPassword='{{ new_hash.stdout }}'
-    WHERE userName='{{ xibo_admin_new }}';
-    SQL
-  when: not password_is_bcrypt
+- name: Update admin password to bcrypt(xibo)
+  shell: >
+    docker exec {{ xibo_db_container }}
+    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+    -e "UPDATE user SET userPassword='{{ new_hash.stdout }}'
+        WHERE userName='{{ xibo_admin_new }}';"
+  when: password_is_default.stdout == "true"
   changed_when: true
 
 # ==================================================
