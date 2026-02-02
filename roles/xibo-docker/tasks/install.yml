@@ -219,7 +219,7 @@
     docker exec -i {{ xibo_db_container }} mysql \
       -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
     UPDATE user
-    SET userPassword='{{ new_hash.stdout }}'
+    SET userPassword='{{ xibo_bcrypt.stdout }}'
     WHERE userName='xibo';
     SQL
   when: password_is_default
