@@ -208,8 +208,7 @@
     import bcrypt
     print(bcrypt.hashpw(b"xibo", bcrypt.gensalt()).decode())
     EOF
-  register: new_hash
-  when: password_is_default.stdout == "true"
+  register: xibo_bcrypt
   changed_when: false
 
 # ==================================================
@@ -223,6 +222,7 @@
     SET userPassword='{{ new_hash.stdout }}'
     WHERE userName='xibo';
     SQL
+  when: password_is_default
   changed_when: true
 
 # ==================================================
