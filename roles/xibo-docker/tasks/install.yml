@@ -226,7 +226,7 @@
   changed_when: true
 
 # ==================================================
-# backup_state Tabelle
+# backup_state Tabelle (Docker-native)
 # ==================================================
 - name: Ensure backup_state table exists
   shell: |
@@ -247,6 +247,9 @@
     INSERT IGNORE INTO backup_state (id, db_hash, media_hash)
     VALUES (1, '', '');
     SQL
+  args:
+    executable: /bin/bash
   changed_when: false
+
 
 
