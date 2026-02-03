@@ -16,11 +16,11 @@
   become: yes
   apt:
     name:
-      - cron
-      - ca-certificates
-      - msmtp
-      - msmtp-mta
-      - mailutils
+       - cron
+       - ca-certificates
+       - msmtp
+       - msmtp-mta
+       - mailutils
       - python3-pymysql
       - python3-bcrypt
       - rsync
@@ -40,24 +40,24 @@
 # ==================================================
 # Verzeichnisstruktur
 # ==================================================
-- name: Create Xibo directory structure
-  become: yes
-  file:
-    path: "/opt/xibo-docker/{{ item }}"
-    state: directory
-    owner: xibo
-    group: xibo
-    mode: "0755"
-  loop:
-    - shared
-    - shared/db
-    - shared/backup
-    - shared/cms
-    - shared/cms/library
-    - shared/cms/custom
-    - shared/cms/web/theme/custom
-    - shared/cms/web/userscripts
-    - shared/cms/ca-certs
+#- name: Create Xibo directory structure
+#  become: yes
+#  file:
+#    path: "/opt/xibo-docker/{{ item }}"
+#    state: directory
+#    owner: xibo
+#    group: xibo
+#    mode: "0755"
+#  loop:
+#    - shared
+#    - shared/db
+#    - shared/backup
+#    - shared/cms
+#    - shared/cms/library
+#    - shared/cms/custom
+#    - shared/cms/web/theme/custom
+#    - shared/cms/web/userscripts
+#    - shared/cms/ca-certs
 
 # ==================================================
 # config.env
