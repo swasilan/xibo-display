@@ -111,16 +111,10 @@
     # --------------------------------------------------
     # Datenbank Restore
     # --------------------------------------------------
-    - name: Copy DB dump into DB container
-      command: >
-        docker cp {{ restore_tmp_dir }}/db.sql
-        {{ xibo_db_container }}:/db.sql
-
     - name: Restore database
-      shell: |
-        docker exec {{ xibo_db_container }} \
-          mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} < /db.sql
-      changed_when: true
+      ansible.builtin.shell: |
+        cat /tmp/restore/db.sql | docker exec -i xibo-db mysql -uxibo -pxibopass xibo
+      become: yes
 
     # --------------------------------------------------
     # CMS Dateien Restore
