@@ -110,6 +110,25 @@
   changed_when: false
 
 # ==================================================
+# 1. Login
+# ==================================================
+- name: Test if default Xibo login still works (xibo_admin/password)
+  ansible.builtin.uri:
+    url: http://localhost:8080/login
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: xibo_admin
+      password: password
+    follow_redirects: all
+    return_content: yes
+    status_code:
+      - 200
+      - 302
+  register: default_login_test
+  failed_when: false
+
+# ==================================================
 # Admin-User prüfen & umbenennen
 # ==================================================
 - name: Check if default admin user xibo_admin exists
