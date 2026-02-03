@@ -110,25 +110,6 @@
   changed_when: false
 
 # ==================================================
-# 1. Login
-# ==================================================
-- name: Test if default Xibo login still works (xibo_admin/password)
-  ansible.builtin.uri:
-    url: http://localhost:8080/login
-    method: POST
-    body_format: form-urlencoded
-    body:
-      username: xibo_admin
-      password: password
-    follow_redirects: all
-    return_content: yes
-    status_code:
-      - 200
-      - 302
-  register: default_login_test
-  failed_when: false
-
-# ==================================================
 # Admin-User prüfen & umbenennen
 # ==================================================
 - name: Check if default admin user xibo_admin exists
@@ -140,32 +121,32 @@
   register: xibo_admin_exists
   changed_when: false
 
-- name: Check if target user xibo already exists
-  shell: >
-    docker exec {{ xibo_db_container }}
-    mysql -N -s
-    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-    -e "SELECT COUNT(*) FROM user WHERE userName='xibo';"
-  register: xibo_user_exists
-  changed_when: false
+#- name: Check if target user xibo already exists
+#  shell: >
+#    docker exec {{ xibo_db_container }}
+#    mysql -N -s
+#    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+#    -e "SELECT COUNT(*) FROM user WHERE userName='xibo';"
+#  register: xibo_user_exists
+#  changed_when: false
 
-- name: Rename xibo_admin to xibo
-  shell: >
-    docker exec {{ xibo_db_container }}
-    mysql
-    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-    -e "UPDATE user SET userName='xibo' WHERE userName='xibo_admin';"
-  when:
-    - xibo_admin_exists.stdout | int == 1
-    - xibo_user_exists.stdout | int == 0
-  changed_when: true
+#- name: Rename xibo_admin to xibo
+#  shell: >
+#    docker exec {{ xibo_db_container }}
+#    mysql
+#    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+#    -e "UPDATE user SET userName='xibo' WHERE userName='xibo_admin';"
+#  when:
+#    - xibo_admin_exists.stdout | int == 1
+#    - xibo_user_exists.stdout | int == 0
+#  changed_when: true
 
-- name: Debug user rename skipped
-  debug:
-    msg: "ℹ️ Benutzerumbenennung übersprungen (entweder bereits umbenannt oder Zieluser existiert)."
-  when:
-    - xibo_admin_exists.stdout | int == 0
-      or xibo_user_exists.stdout | int == 1
+#- name: Debug user rename skipped
+#  debug:
+#    msg: "ℹ️ Benutzerumbenennung übersprungen (entweder bereits umbenannt oder Zieluser existiert)."
+#  when:
+#    - xibo_admin_exists.stdout | int == 0
+#      or xibo_user_exists.stdout | int == 1
 
 # ==================================================
 # Passwort-Hash auslesen
@@ -233,16 +214,16 @@
 # ==================================================
 # Passwort aktualisieren (MD5 → bcrypt)
 # ==================================================
-- name: Set admin password to bcrypt(xibo)
-  shell: |
-    docker exec -i {{ xibo_db_container }} mysql \
-      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
-    UPDATE user
-    SET userPassword='{{ xibo_bcrypt.stdout }}'
-    WHERE userName='xibo';
-    SQL
-  when: password_is_default
-  changed_when: true
+#- name: Set admin password to bcrypt(xibo)
+#  shell: |
+#    docker exec -i {{ xibo_db_container }} mysql \
+#      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
+#    UPDATE user
+#    SET userPassword='{{ xibo_bcrypt.stdout }}'
+#    WHERE userName='xibo';
+#    SQL
+#  when: password_is_default
+#  changed_when: true
 
 # ==================================================
 # Xibo Prozess Privilegien auf mysql geben
