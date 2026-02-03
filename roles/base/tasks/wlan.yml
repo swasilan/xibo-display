@@ -7,6 +7,13 @@
     state: present
     update_cache: yes
 
+- name: Debug WLAN Variablen
+  ansible.builtin.debug:
+    msg:
+      - "wifi_enabled: {{ wifi_enabled | default('NOT SET') }}"
+      - "wifi_ssid: {{ wifi_ssid | default('NOT SET') }}"
+      - "wifi_password: {{ 'SET' if wifi_password is defined else 'NOT SET' }}"
+
 - name: NetworkManager starten und aktivieren
   ansible.builtin.systemd:
     name: NetworkManager
