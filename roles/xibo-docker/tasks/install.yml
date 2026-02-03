@@ -59,6 +59,15 @@
 #    - shared/cms/web/userscripts
 #    - shared/cms/ca-certs
 
+- name: Create Xibo directory structure
+  become: yes
+  file:
+    path: /opt/xibo-docker
+    state: directory
+    owner: xibo
+    group: xibo
+    mode: '0755'
+
 # ==================================================
 # Docker Compose
 # ==================================================
