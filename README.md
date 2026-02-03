@@ -2,9 +2,10 @@
 
 ## Base System
 - Ubuntu Server 24.04.3
-- Commands:
-  - sudo apt update
-  - sudo apt install git ansible -y
+
+```bash
+sudo apt update
+sudo apt install git ansible -y
 
 ## Configuration
 
