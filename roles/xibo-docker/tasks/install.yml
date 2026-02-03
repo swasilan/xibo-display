@@ -82,9 +82,10 @@
 # Xibo Stack starten
 # ==================================================
 - name: Start Xibo stack
-  community.docker.docker_compose:
+  community.docker.docker_compose_v2:
     project_src: /opt/xibo-docker
     state: present
+  become: yes
 
 - name: Wait for Xibo CMS migration to finish
   shell: |
