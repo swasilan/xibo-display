@@ -263,6 +263,15 @@
   when: mysql_root_password_raw.stdout != ""
   changed_when: true
 
-
+# ==================================================
+# Xibo Berechtigungen auf private keys
+# ==================================================
+- name: Setze Gruppenleserechte auf private.key
+  become: yes
+  file:
+    path: /opt/xibo-docker/shared/cms/library/certs/private.key
+    mode: '0640'
+    owner: www-data
+    group: www-data
 
 
