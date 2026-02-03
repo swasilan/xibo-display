@@ -60,6 +60,18 @@
 #    - shared/cms/ca-certs
 
 # ==================================================
+# Docker Compose
+# ==================================================
+- name: Deploy Docker Compose file
+  become: yes
+  template:
+    src: docker-compose.yml.j2
+    dest: /opt/xibo-docker/docker-compose.yml
+    owner: xibo
+    group: xibo
+    mode: "0644"
+
+# ==================================================
 # config.env
 # ==================================================
 - name: Ensure config.env exists
@@ -75,18 +87,6 @@
       MYSQL_USER={{ xibo_db_user }}
       MYSQL_PASSWORD={{ xibo_db_password }}
       XMR_HOST=cms-xmr
-
-# ==================================================
-# Docker Compose
-# ==================================================
-- name: Deploy Docker Compose file
-  become: yes
-  template:
-    src: docker-compose.yml.j2
-    dest: /opt/xibo-docker/docker-compose.yml
-    owner: xibo
-    group: xibo
-    mode: "0644"
 
 # ==================================================
 # Xibo Stack starten
