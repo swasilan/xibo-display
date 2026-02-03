@@ -104,8 +104,7 @@
   ansible.builtin.command: nmcli con up "wifi-static"
   when:
     - wifi_enabled
-    - wifi_manual_create is defined
-    - wifi_manual_create.rc == 0
+    - wifi_manual_create is succeeded
 
 # Warte kurz
 - name: Warte auf NetworkManager
