@@ -58,8 +58,8 @@ FROM information_schema.tables
 WHERE table_schema = DATABASE()
 ORDER BY table_name;
 SQL
-  | sha256sum | awk '{print $1}'
 )"
+DB_HASH="$(printf '%s\n' "$DB_HASH" | sha256sum | awk '{print $1}')"
 
 [[ -z "$DB_HASH" ]] && { log "FEHLER: DB_HASH leer"; exit 1; }
 
