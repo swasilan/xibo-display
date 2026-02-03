@@ -1,5 +1,5 @@
 ---
-xibo_base_path: /opt/xibo
+xibo_base_path: /opt/xibo-docker
 
 xibo_env_file: config.env
 
