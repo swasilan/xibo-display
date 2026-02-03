@@ -16,11 +16,11 @@
   become: yes
   apt:
     name:
-       - cron
-       - ca-certificates
-       - msmtp
-       - msmtp-mta
-       - mailutils
+      - cron
+      - ca-certificates
+      - msmtp
+      - msmtp-mta
+      - mailutils
       - python3-pymysql
       - python3-bcrypt
       - rsync
