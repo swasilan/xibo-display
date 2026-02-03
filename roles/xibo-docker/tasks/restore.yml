@@ -66,17 +66,20 @@
           {% endfor %}
 
     - name: Ask if restore should be executed
-      pause:
-        prompt: |
-          ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
-          Möchtest du ein Backup wiederherstellen?
-          Tippe 'yes' zum Fortfahren:
-      register: restore_confirm
+  pause:
+    prompt: |
+      ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
+      Möchtest du ein Backup wiederherstellen?
+      Tippe 'yes' zum Fortfahren:
+  register: restore_confirm
 
-    - name: Abort restore if user declines
-      fail:
-        msg: "Restore vom Benutzer abgebrochen."
-      when: restore_confirm.user_input != "yes"
+- name: Skip restore notification
+  debug:
+    msg: "ℹ️ Restore übersprungen, fahre mit Installation fort."
+  when: restore_confirm.user_input != "yes"
+
+# Alle weiteren Tasks in einen Block mit when-Bedingung
+- block:
 
     - name: Ask which backup to restore
       pause:
@@ -99,26 +102,17 @@
       debug:
         msg: "✅ Gewähltes Backup: {{ selected_backup }}"
 
-    # --------------------------------------------------
-    # Backup entpacken
-    # --------------------------------------------------
     - name: Unarchive selected backup
       unarchive:
         src: "{{ selected_backup }}"
         dest: "{{ restore_tmp_dir }}"
         remote_src: yes
 
-    # --------------------------------------------------
-    # Datenbank Restore
-    # --------------------------------------------------
     - name: Restore database
       ansible.builtin.shell: |
-        cat /tmp/restore/db.sql | docker exec -i xibo-db mysql -uxibo -pxibopass xibo
+        cat {{ restore_tmp_dir }}/db.sql | docker exec -i xibo-db mysql -uxibo -pxibopass xibo
       become: yes
 
-    # --------------------------------------------------
-    # CMS Dateien Restore
-    # --------------------------------------------------
     - name: Restore CMS files
       shell: |
         rsync -a --delete \
@@ -126,9 +120,6 @@
           {{ cms_target_dir }}/
       changed_when: true
 
-    # --------------------------------------------------
-    # Cleanup
-    # --------------------------------------------------
     - name: Cleanup restore temp directory
       file:
         path: "{{ restore_tmp_dir }}"
@@ -138,4 +129,6 @@
       debug:
         msg: "🎉 Restore erfolgreich abgeschlossen."
 
-  when: backups_exist
+  when: restore_confirm.user_input == "yes"
+
+when: backups_exist
