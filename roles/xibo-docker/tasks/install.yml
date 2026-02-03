@@ -247,20 +247,24 @@
 # ==================================================
 # Xibo Prozess Privilegien auf mysql geben
 # ==================================================
-- name: Check if xibo user has PROCESS privilege
+- name: Get MySQL root password from container
   shell: >
-    docker exec {{ xibo_db_container }}
-    mysql -N -s -u root -p{{ xibo_db_root_password }}
-    -e "SELECT COUNT(*) FROM mysql.user WHERE User='{{ xibo_db_user }}' AND Process_priv='Y';"
-  register: xibo_process_priv
+    docker inspect {{ xibo_db_container }}
+    --format='{{'{{'}} .Config.Env {{'}}'}}' |
+    grep -oP 'MYSQL_ROOT_PASSWORD=\K[^ ]*'
+  register: mysql_root_password_raw
   changed_when: false
+
+- name: Set root password variable
+  set_fact:
+    xibo_db_root_password: "{{ mysql_root_password_raw.stdout }}"
 
 - name: Grant PROCESS privilege to xibo database user
   shell: >
     docker exec {{ xibo_db_container }}
     mysql -u root -p{{ xibo_db_root_password }}
     -e "GRANT PROCESS ON *.* TO '{{ xibo_db_user }}'@'%'; FLUSH PRIVILEGES;"
-  when: xibo_process_priv.stdout == "0"
+  changed_when: true
 
 
 
