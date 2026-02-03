@@ -30,6 +30,29 @@
     state: present
     update_cache: yes
 
+- name: Erstelle Docker CLI-Plugins Verzeichnis
+  ansible.builtin.file:
+    path: /usr/local/lib/docker/cli-plugins
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Installiere Docker Compose V2
+  ansible.builtin.get_url:
+    url: https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64
+    dest: /usr/local/lib/docker/cli-plugins/docker-compose
+    mode: '0755'
+  become: yes
+
+- name: Verify Docker Compose Installation
+  ansible.builtin.command: docker compose version
+  register: compose_version
+  changed_when: false
+
+- name: Debug Compose Version
+  ansible.builtin.debug:
+    var: compose_version.stdout
+
 - name: Ensure Docker service is running
   become: yes
   service:
