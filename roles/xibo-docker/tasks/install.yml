@@ -244,6 +244,24 @@
   when: password_is_default
   changed_when: true
 
+# ==================================================
+# Xibo Prozess Privilegien auf mysql geben
+# ==================================================
+- name: Check if xibo user has PROCESS privilege
+  shell: >
+    docker exec {{ xibo_db_container }}
+    mysql -N -s -u root -p{{ xibo_db_root_password }}
+    -e "SELECT COUNT(*) FROM mysql.user WHERE User='{{ xibo_db_user }}' AND Process_priv='Y';"
+  register: xibo_process_priv
+  changed_when: false
+
+- name: Grant PROCESS privilege to xibo database user
+  shell: >
+    docker exec {{ xibo_db_container }}
+    mysql -u root -p{{ xibo_db_root_password }}
+    -e "GRANT PROCESS ON *.* TO '{{ xibo_db_user }}'@'%'; FLUSH PRIVILEGES;"
+  when: xibo_process_priv.stdout == "0"
+
 
 
 
