@@ -5,3 +5,9 @@
     groups: docker
     append: yes
 
+- name: Füge User xibo zur www-data Gruppe hinzu
+  become: yes
+  user:
+    name: xibo
+    groups: www-data
+    append: yes
