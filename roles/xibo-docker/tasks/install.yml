@@ -40,25 +40,6 @@
 # ==================================================
 # Verzeichnisstruktur
 # ==================================================
-#- name: Create Xibo directory structure
-#  become: yes
-#  file:
-#    path: "/opt/xibo-docker/{{ item }}"
-#    state: directory
-#    owner: xibo
-#    group: xibo
-#    mode: "0755"
-#  loop:
-#    - shared
-#    - shared/db
-#    - shared/backup
-#    - shared/cms
-#    - shared/cms/library
-#    - shared/cms/custom
-#    - shared/cms/web/theme/custom
-#    - shared/cms/web/userscripts
-#    - shared/cms/ca-certs
-
 - name: Create Xibo directory structure
   become: yes
   file:
@@ -104,6 +85,16 @@
   community.docker.docker_compose:
     project_src: /opt/xibo-docker
     state: present
+
+- name: Wait for Xibo CMS migration to finish
+  shell: |
+    docker logs {{ xibo_cms_container }} 2>&1 | grep -q "All Done. Took"
+  register: migration_done
+  retries: 60
+  delay: 10
+  until: migration_done.rc == 0
+  changed_when: false
+  failed_when: migration_done.rc != 0
 
 # ==================================================
 # Warten bis DB erreichbar (robust)
