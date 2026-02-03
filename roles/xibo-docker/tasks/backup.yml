@@ -1,14 +1,21 @@
 ---
 # tasks/backup.yml
 
+# ==================================================
+# Backup Ordnerstruktur erstellen
+# ==================================================
 - name: Erstelle Backup-Ordner
   become: yes
   file:
-    path: /opt/xibo-backup/backups
+    path: "{{ item }}"
     state: directory
     owner: xibo
     group: xibo
     mode: '0755'
+  loop:
+    - /opt/xibo-backup
+    - /opt/xibo-backup/backups
+    - /opt/xibo-backup/logs
 
 # ==================================================
 # backup_state Tabelle + Default-Row (im DB-Container)
