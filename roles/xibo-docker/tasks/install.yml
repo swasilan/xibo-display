@@ -82,9 +82,9 @@
 # Xibo Stack starten
 # ==================================================
 - name: Start Xibo stack
-  community.docker.docker_compose_v2:
-    project_src: /opt/xibo-docker
-    state: present
+  ansible.builtin.command:
+    cmd: docker-compose up -d
+    chdir: /opt/xibo-docker
   become: yes
 
 - name: Wait for Xibo CMS migration to finish
