@@ -4,6 +4,8 @@ base_packages:
   - git
   - curl
   - vim
+  - nano
+  - net-tools
 timezone: "Europe/Berlin"
 
 wifi_enabled: false
