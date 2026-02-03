@@ -58,11 +58,11 @@
 - block:
 
     - name: Show available backups
-      debug:
+      ansible.builtin.debug:
         msg: |
           Verfügbare Backups:
           {% for f in found_backups.files | sort(attribute='mtime', reverse=true) %}
-          - {{ loop.index }}: {{ f.path }} ({{ f.mtime | to_datetime }})
+          - {{ loop.index }}: {{ f.path | basename }} ({{ '%Y-%m-%d %H:%M:%S' | strftime(f.mtime) }})
           {% endfor %}
 
     - name: Ask if restore should be executed
