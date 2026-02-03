@@ -27,6 +27,7 @@
       - zip
       - docker.io
       - docker-compose
+      - docker-compose-plugin
     state: present
     update_cache: yes
 
