@@ -30,10 +30,10 @@
     state: present
     update_cache: yes
 
-- name: Installiere Docker Compose Plugin
-  ansible.builtin.apt:
-    name: docker-compose-plugin
-    state: present
+- name: Start Xibo stack
+  ansible.builtin.command:
+    cmd: docker-compose up -d
+    chdir: /opt/xibo-docker
   become: yes
 
 - name: Ensure Docker service is running
