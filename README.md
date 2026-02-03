@@ -9,7 +9,7 @@ sudo apt update && sudo apt install git ansible -y
 
 ## Clone This Repository
 ```bash
-git clone 
+git clone https://github.com/swasilan/xibo-display.git
 ```
 
 ## Configuration
