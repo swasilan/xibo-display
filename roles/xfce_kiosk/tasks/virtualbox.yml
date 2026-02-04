@@ -1,0 +1,65 @@
+- name: Skip VirtualBox Guest Additions
+  ansible.builtin.debug:
+    msg: "ℹ️ VirtualBox Guest Additions sind deaktiviert"
+  when: not (virtualbox_guest_additions_enabled | default(false))
+
+- block:
+    - name: Installiere VirtualBox Guest Additions Abhängigkeiten
+      ansible.builtin.apt:
+        name:
+          - build-essential
+          - dkms
+          - linux-headers-{{ ansible_kernel }}
+        state: present
+        update_cache: yes
+      become: yes
+
+    - name: Erstelle Mount-Point für CD-ROM
+      ansible.builtin.file:
+        path: /mnt/cdrom
+        state: directory
+        mode: '0755'
+      become: yes
+
+    - name: Download VirtualBox Guest Additions ISO
+      ansible.builtin.get_url:
+        url: "https://download.virtualbox.org/virtualbox/7.0.14/VBoxGuestAdditions_7.0.14.iso"
+        dest: /tmp/VBoxGuestAdditions.iso
+      become: yes
+
+    - name: Mounte ISO
+      ansible.builtin.mount:
+        path: /mnt/cdrom
+        src: /tmp/VBoxGuestAdditions.iso
+        fstype: iso9660
+        opts: loop,ro
+        state: mounted
+      become: yes
+
+    - name: Installiere VirtualBox Guest Additions
+      ansible.builtin.command: /mnt/cdrom/VBoxLinuxAdditions.run
+      become: yes
+      register: vbox_install
+      failed_when: 
+        - vbox_install.rc != 0
+        - "'already installed' not in vbox_install.stdout"
+
+    - name: Unmounte ISO
+      ansible.builtin.mount:
+        path: /mnt/cdrom
+        state: unmounted
+      become: yes
+
+    - name: Cleanup ISO
+      ansible.builtin.file:
+        path: /tmp/VBoxGuestAdditions.iso
+        state: absent
+      become: yes
+
+    - name: Reboot nach Guest Additions Installation
+      ansible.builtin.reboot:
+        reboot_timeout: 300
+      become: yes
+      when: vbox_install.rc == 0
+
+  when: virtualbox_guest_additions_enabled | default(false)
