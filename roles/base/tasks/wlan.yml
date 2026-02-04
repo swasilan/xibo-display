@@ -1,25 +1,3 @@
-- name: Installiere WLAN & NetworkManager Pakete
-  ansible.builtin.apt:
-    name:
-      - network-manager
-      - wireless-tools
-      - wpasupplicant
-    state: present
-    update_cache: yes
-
-- name: Debug WLAN Variablen
-  ansible.builtin.debug:
-    msg:
-      - "wifi_enabled: {{ wifi_enabled | default('NOT SET') }}"
-      - "wifi_ssid: {{ wifi_ssid | default('NOT SET') }}"
-      - "wifi_password: {{ 'SET' if wifi_password is defined else 'NOT SET' }}"
-
-- name: NetworkManager starten und aktivieren
-  ansible.builtin.systemd:
-    name: NetworkManager
-    enabled: yes
-    state: started
-
 - name: Skip WLAN configuration
   ansible.builtin.debug:
     msg: "ℹ️ WLAN ist deaktiviert, überspringe WLAN-Konfiguration"
@@ -27,6 +5,28 @@
 
 # Alle WLAN-Tasks nur wenn wifi_enabled true ist
 - block:
+    - name: Installiere WLAN & NetworkManager Pakete
+      ansible.builtin.apt:
+        name:
+          - network-manager
+          - wireless-tools
+          - wpasupplicant
+        state: present
+        update_cache: yes
+    
+    - name: Debug WLAN Variablen
+      ansible.builtin.debug:
+        msg:
+          - "wifi_enabled: {{ wifi_enabled | default('NOT SET') }}"
+          - "wifi_ssid: {{ wifi_ssid | default('NOT SET') }}"
+          - "wifi_password: {{ 'SET' if wifi_password is defined else 'NOT SET' }}"
+    
+    - name: NetworkManager starten und aktivieren
+      ansible.builtin.systemd:
+        name: NetworkManager
+        enabled: yes
+        state: started
+        
     - name: WLAN global aktivieren
       ansible.builtin.command: nmcli radio wifi on
       changed_when: false
