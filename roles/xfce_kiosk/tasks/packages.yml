@@ -10,8 +10,3 @@
       - x11-xserver-utils
     state: present
     update_cache: yes
-
-- name: Setze graphical target
-  ansible.builtin.command: systemctl set-default graphical.target
-  become: yes
-  changed_when: false
