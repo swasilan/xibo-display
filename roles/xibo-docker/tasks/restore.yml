@@ -2,7 +2,6 @@
 # --------------------------------------------------
 # Restore-Playbook für Xibo
 # --------------------------------------------------
-
 # --------------------------------------------------
 # Variablen definieren
 # --------------------------------------------------
@@ -56,7 +55,6 @@
 # Backup nur wiederherstellen, wenn Backups existieren
 # --------------------------------------------------
 - block:
-
     - name: Show available backups
       ansible.builtin.debug:
         msg: |
@@ -66,69 +64,68 @@
           {% endfor %}
 
     - name: Ask if restore should be executed
-  pause:
-    prompt: |
-      ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
-      Möchtest du ein Backup wiederherstellen?
-      Tippe 'yes' zum Fortfahren:
-  register: restore_confirm
-
-- name: Skip restore notification
-  debug:
-    msg: "ℹ️ Restore übersprungen, fahre mit Installation fort."
-  when: restore_confirm.user_input != "yes"
-
-# Alle weiteren Tasks in einen Block mit when-Bedingung
-- block:
-
-    - name: Ask which backup to restore
       pause:
         prompt: |
-          Bitte Nummer des Backups angeben (1–{{ found_backups.files | length }}):
-      register: backup_choice
+          ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
+          Möchtest du ein Backup wiederherstellen?
+          Tippe 'yes' zum Fortfahren:
+      register: restore_confirm
 
-    - name: Validate backup selection
-      fail:
-        msg: "Ungültige Auswahl."
-      when: backup_choice.user_input | int < 1 or backup_choice.user_input | int > found_backups.files | length
-
-    - name: Select chosen backup
-      set_fact:
-        selected_backup: >-
-          {{ (found_backups.files | sort(attribute='mtime', reverse=true))
-             [backup_choice.user_input | int - 1].path }}
-
-    - name: Confirm selected backup
+    - name: Skip restore notification
       debug:
-        msg: "✅ Gewähltes Backup: {{ selected_backup }}"
+        msg: "ℹ️ Restore übersprungen, fahre mit Installation fort."
+      when: restore_confirm.user_input != "yes"
 
-    - name: Unarchive selected backup
-      unarchive:
-        src: "{{ selected_backup }}"
-        dest: "{{ restore_tmp_dir }}"
-        remote_src: yes
+    # Alle weiteren Tasks in einen Block mit when-Bedingung
+    - block:
+        - name: Ask which backup to restore
+          pause:
+            prompt: |
+              Bitte Nummer des Backups angeben (1–{{ found_backups.files | length }}):
+          register: backup_choice
 
-    - name: Restore database
-      ansible.builtin.shell: |
-        cat {{ restore_tmp_dir }}/db.sql | docker exec -i xibo-db mysql -uxibo -pxibopass xibo
-      become: yes
+        - name: Validate backup selection
+          fail:
+            msg: "Ungültige Auswahl."
+          when: backup_choice.user_input | int < 1 or backup_choice.user_input | int > found_backups.files | length
 
-    - name: Restore CMS files
-      shell: |
-        rsync -a --delete \
-          {{ restore_tmp_dir }}/cms/ \
-          {{ cms_target_dir }}/
-      changed_when: true
+        - name: Select chosen backup
+          set_fact:
+            selected_backup: >-
+              {{ (found_backups.files | sort(attribute='mtime', reverse=true))
+                 [backup_choice.user_input | int - 1].path }}
 
-    - name: Cleanup restore temp directory
-      file:
-        path: "{{ restore_tmp_dir }}"
-        state: absent
+        - name: Confirm selected backup
+          debug:
+            msg: "✅ Gewähltes Backup: {{ selected_backup }}"
 
-    - name: Restore finished
-      debug:
-        msg: "🎉 Restore erfolgreich abgeschlossen."
+        - name: Unarchive selected backup
+          unarchive:
+            src: "{{ selected_backup }}"
+            dest: "{{ restore_tmp_dir }}"
+            remote_src: yes
 
-  when: restore_confirm.user_input == "yes"
+        - name: Restore database
+          ansible.builtin.shell: |
+            cat {{ restore_tmp_dir }}/db.sql | docker exec -i xibo-db mysql -uxibo -pxibopass xibo
+          become: yes
 
-when: backups_exist
+        - name: Restore CMS files
+          shell: |
+            rsync -a --delete \
+              {{ restore_tmp_dir }}/cms/ \
+              {{ cms_target_dir }}/
+          changed_when: true
+
+        - name: Cleanup restore temp directory
+          file:
+            path: "{{ restore_tmp_dir }}"
+            state: absent
+
+        - name: Restore finished
+          debug:
+            msg: "🎉 Restore erfolgreich abgeschlossen."
+
+      when: restore_confirm.user_input == "yes"
+
+  when: backups_exist
