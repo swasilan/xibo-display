@@ -20,130 +20,128 @@
     enabled: yes
     state: started
 
-- name: WLAN global aktivieren
-  ansible.builtin.command: nmcli radio wifi on
-  changed_when: false
-
-- name: WLAN-Adapter automatisch ermitteln
-  ansible.builtin.shell: >
-    nmcli -t -f DEVICE,TYPE device status |
-    grep ':wifi' |
-    cut -d':' -f1 |
-    head -n1
-  register: wifi_iface_result
-  changed_when: false
-
-- name: Abbrechen wenn kein WLAN-Adapter gefunden wurde
-  ansible.builtin.fail:
-    msg: "Kein WLAN-Adapter gefunden"
-  when: wifi_iface_result.stdout | length == 0
-
-- name: Setze WLAN Interface Variable
-  ansible.builtin.set_fact:
-    wifi_interface: "{{ wifi_iface_result.stdout }}"
-
-# Debug: Verfügbare WLANs scannen
-- name: Scanne verfügbare WLANs
-  ansible.builtin.command: nmcli device wifi list
-  register: wifi_scan
-  changed_when: false
-
-- name: Debug WLAN Scan
+- name: Skip WLAN configuration
   ansible.builtin.debug:
-    var: wifi_scan.stdout_lines
+    msg: "ℹ️ WLAN ist deaktiviert, überspringe WLAN-Konfiguration"
+  when: not (wifi_enabled | default(false))
 
-# WLAN verbinden mit vollständigem Error Handling
-- name: WLAN verbinden (Connection sicher anlegen)
-  ansible.builtin.command: >
-    nmcli device wifi connect "{{ wifi_ssid }}"
-    password "{{ wifi_password }}"
-    ifname "{{ wifi_interface }}"
-    name "wifi-static"
-  when: wifi_enabled
-  register: wifi_connect
-  ignore_errors: yes
+# Alle WLAN-Tasks nur wenn wifi_enabled true ist
+- block:
+    - name: WLAN global aktivieren
+      ansible.builtin.command: nmcli radio wifi on
+      changed_when: false
 
-- name: Debug WLAN Connect Ergebnis
-  ansible.builtin.debug:
-    msg:
-      - "Return Code: {{ wifi_connect.rc }}"
-      - "STDOUT: {{ wifi_connect.stdout }}"
-      - "STDERR: {{ wifi_connect.stderr }}"
-  when: wifi_enabled
+    - name: WLAN-Adapter automatisch ermitteln
+      ansible.builtin.shell: >
+        nmcli -t -f DEVICE,TYPE device status |
+        grep ':wifi' |
+        cut -d':' -f1 |
+        head -n1
+      register: wifi_iface_result
+      changed_when: false
 
-- name: Abbrechen wenn WLAN Connect fehlgeschlagen
-  ansible.builtin.fail:
-    msg: "WLAN Verbindung fehlgeschlagen: {{ wifi_connect.stderr }}"
-  when: 
-    - wifi_enabled
-    - wifi_connect.rc != 0
+    - name: Abbrechen wenn kein WLAN-Adapter gefunden wurde
+      ansible.builtin.fail:
+        msg: "Kein WLAN-Adapter gefunden"
+      when: wifi_iface_result.stdout | length == 0
 
-# Alternative: Connection manuell erstellen wenn Connect fehlschlägt
-- name: Connection manuell erstellen (Fallback)
-  ansible.builtin.command: >
-    nmcli con add
-    type wifi
-    con-name "wifi-static"
-    ifname "{{ wifi_interface }}"
-    ssid "{{ wifi_ssid }}"
-    wifi-sec.key-mgmt wpa-psk
-    wifi-sec.psk "{{ wifi_password }}"
-  when: 
-    - wifi_enabled
-    - wifi_connect is defined
-    - wifi_connect.rc != 0
-  register: wifi_manual_create
-  ignore_errors: yes
+    - name: Setze WLAN Interface Variable
+      ansible.builtin.set_fact:
+        wifi_interface: "{{ wifi_iface_result.stdout }}"
 
-- name: Debug manuelle Connection Erstellung
-  ansible.builtin.debug:
-    var: wifi_manual_create
-  when: wifi_manual_create is defined
+    - name: Scanne verfügbare WLANs
+      ansible.builtin.command: nmcli device wifi list
+      register: wifi_scan
+      changed_when: false
 
-- name: Connection manuell aktivieren
-  ansible.builtin.command: nmcli con up "wifi-static"
-  when:
-    - wifi_enabled
-    - wifi_manual_create is succeeded
+    - name: Debug WLAN Scan
+      ansible.builtin.debug:
+        var: wifi_scan.stdout_lines
 
-# Warte kurz
-- name: Warte auf NetworkManager
-  ansible.builtin.pause:
-    seconds: 3
+    - name: WLAN verbinden (Connection sicher anlegen)
+      ansible.builtin.command: >
+        nmcli device wifi connect "{{ wifi_ssid }}"
+        password "{{ wifi_password }}"
+        ifname "{{ wifi_interface }}"
+        name "wifi-static"
+      register: wifi_connect
+      ignore_errors: yes
 
-# Prüfe Connection
-- name: Prüfe ob wifi-static Connection existiert
-  ansible.builtin.command: nmcli -t -f NAME con show
-  register: nmcli_connections_verify
-  changed_when: false
+    - name: Debug WLAN Connect Ergebnis
+      ansible.builtin.debug:
+        msg:
+          - "Return Code: {{ wifi_connect.rc }}"
+          - "STDOUT: {{ wifi_connect.stdout }}"
+          - "STDERR: {{ wifi_connect.stderr }}"
 
-- name: Debug Connection Status
-  ansible.builtin.debug:
-    msg: "Verfügbare Connections: {{ nmcli_connections_verify.stdout_lines }}"
+    - name: Abbrechen wenn WLAN Connect fehlgeschlagen
+      ansible.builtin.fail:
+        msg: "WLAN Verbindung fehlgeschlagen: {{ wifi_connect.stderr }}"
+      when: wifi_connect.rc != 0
 
-- name: Abbrechen wenn wifi-static fehlt
-  ansible.builtin.fail:
-    msg: "Connection wifi-static existiert nicht. Verfügbare Connections: {{ nmcli_connections_verify.stdout_lines }}"
-  when: "'wifi-static' not in nmcli_connections_verify.stdout_lines"
+    - name: Connection manuell erstellen (Fallback)
+      ansible.builtin.command: >
+        nmcli con add
+        type wifi
+        con-name "wifi-static"
+        ifname "{{ wifi_interface }}"
+        ssid "{{ wifi_ssid }}"
+        wifi-sec.key-mgmt wpa-psk
+        wifi-sec.psk "{{ wifi_password }}"
+      when: 
+        - wifi_connect is defined
+        - wifi_connect.rc != 0
+      register: wifi_manual_create
+      ignore_errors: yes
 
-- name: Statische IP konfigurieren
-  ansible.builtin.command: >
-    nmcli con mod "wifi-static"
-    ipv4.addresses "{{ static_ip }}/{{ static_prefix }}"
-    ipv4.gateway "{{ gateway }}"
-    ipv4.dns "{{ dns | join(',') }}"
-    ipv4.method manual
-  when: static_ip is defined
+    - name: Debug manuelle Connection Erstellung
+      ansible.builtin.debug:
+        var: wifi_manual_create
+      when: wifi_manual_create is defined
 
-- name: WLAN Connection neu aktivieren
-  ansible.builtin.shell: >
-    nmcli con down "wifi-static" &&
-    nmcli con up "wifi-static"
-  when: static_ip is defined
+    - name: Connection manuell aktivieren
+      ansible.builtin.command: nmcli con up "wifi-static"
+      when:
+        - wifi_manual_create is succeeded
 
-- name: Debug WLAN Status
-  ansible.builtin.debug:
-    msg:
-      - "WLAN Adapter: {{ wifi_interface }}"
-      - "Connection: wifi-static"
-      - "Statische IP gesetzt: {{ 'ja' if static_ip is defined else 'nein' }}"
+    - name: Warte auf NetworkManager
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Prüfe ob wifi-static Connection existiert
+      ansible.builtin.command: nmcli -t -f NAME con show
+      register: nmcli_connections_verify
+      changed_when: false
+
+    - name: Debug Connection Status
+      ansible.builtin.debug:
+        msg: "Verfügbare Connections: {{ nmcli_connections_verify.stdout_lines }}"
+
+    - name: Abbrechen wenn wifi-static fehlt
+      ansible.builtin.fail:
+        msg: "Connection wifi-static existiert nicht. Verfügbare Connections: {{ nmcli_connections_verify.stdout_lines }}"
+      when: "'wifi-static' not in nmcli_connections_verify.stdout_lines"
+
+    - name: Statische IP konfigurieren
+      ansible.builtin.command: >
+        nmcli con mod "wifi-static"
+        ipv4.addresses "{{ static_ip }}/{{ static_prefix }}"
+        ipv4.gateway "{{ gateway }}"
+        ipv4.dns "{{ dns | join(',') }}"
+        ipv4.method manual
+      when: static_ip is defined
+
+    - name: WLAN Connection neu aktivieren
+      ansible.builtin.shell: >
+        nmcli con down "wifi-static" &&
+        nmcli con up "wifi-static"
+      when: static_ip is defined
+
+    - name: Debug WLAN Status
+      ansible.builtin.debug:
+        msg:
+          - "WLAN Adapter: {{ wifi_interface }}"
+          - "Connection: wifi-static"
+          - "Statische IP gesetzt: {{ 'ja' if static_ip is defined else 'nein' }}"
+
+  when: wifi_enabled | default(false)
