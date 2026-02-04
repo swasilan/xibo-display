@@ -1,4 +1,4 @@
 - import_tasks: packages.yml
-- import_tasks: user.yml
-- import_tasks: kiosk.yml
-- import_tasks: autologin.yml
+#- import_tasks: user.yml
+#- import_tasks: kiosk.yml
+#- import_tasks: autologin.yml
