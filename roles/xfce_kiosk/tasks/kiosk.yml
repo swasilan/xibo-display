@@ -80,14 +80,9 @@
   become: yes
 
 ############################################
-# HINWEIS ZUM REBOOT
+# REBOOT
 ############################################
-- name: Hinweis Reboot notwendig
-  ansible.builtin.debug:
-    msg: |
-      ✅ Installation abgeschlossen.
-      🔁 Ein REBOOT ist notwendig, damit:
-        - VirtualBox Module sauber aktiv sind
-        - LightDM Autologin greift
-      👉 Bitte jetzt manuell rebooten:
-         sudo reboot
+- name: Reboot
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+
