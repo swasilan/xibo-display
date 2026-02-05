@@ -83,21 +83,35 @@
 # REBOOT
 ############################################
 - name: Prüfe ob Reboot bereits durchgeführt wurde
-  stat:
-    path: /var/run/kiosk_reboot_done
+  ansible.builtin.stat:
+    path: /var/run/xfce-kiosk-rebooted
   register: reboot_done
 
 - name: Reboot Kiosk (nur einmal)
-  reboot:
-    reboot_timeout: 600
-  when: not reboot_done.stat.exists
+  ansible.builtin.shell: "sleep 2 && shutdown -r now 'Reboot durch Ansible'"
   become: yes
+  async: 1
+  poll: 0
+  ignore_errors: true
+  when: not reboot_done.stat.exists
 
-- name: Marker-Datei nach Reboot anlegen
-  file:
-    path: /var/run/kiosk_reboot_done
+- name: Erstelle Reboot-Marker für nächsten Run
+  ansible.builtin.file:
+    path: /var/run/xfce-kiosk-rebooted
     state: touch
-  when: not reboot_done.stat.exists
+    mode: '0644'
   become: yes
+  when: not reboot_done.stat.exists
 
+- name: Info wenn Reboot übersprungen wird
+  ansible.builtin.debug:
+    msg: "ℹ️ Reboot bereits durchgeführt, überspringe..."
+  when: reboot_done.stat.exists
+
+- name: Manuelle Pause für Reboot
+  ansible.builtin.pause:
+    prompt: |
+      ⚠️ System wird jetzt neu gestartet.
+      Bitte warte bis System neu gestartet ist, dann drücke ENTER um fortzufahren.
+  when: not reboot_done.stat.exists
 
