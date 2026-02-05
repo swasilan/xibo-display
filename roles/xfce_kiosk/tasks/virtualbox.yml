@@ -14,6 +14,12 @@
         update_cache: yes
       become: yes
 
+    - name: Unmounte /tmp/vbox-mount falls bereits gemountet
+      ansible.builtin.command: umount /tmp/vbox-mount
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+
     - name: Download VirtualBox Guest Additions ISO
       ansible.builtin.get_url:
         url: "https://download.virtualbox.org/virtualbox/7.0.14/VBoxGuestAdditions_7.0.14.iso"
@@ -26,7 +32,7 @@
         state: directory
         mode: '0755'
       become: yes
-    
+
     - name: Mounte ISO
       ansible.builtin.mount:
         path: /tmp/vbox-mount
@@ -35,36 +41,38 @@
         opts: loop,ro
         state: mounted
       become: yes
-    
-    - name: Installiere Guest Additions
-      ansible.builtin.command: /tmp/vbox-mount/VBoxLinuxAdditions.run
-      become: yes
 
     - name: Installiere VirtualBox Guest Additions
-      ansible.builtin.command: /mnt/cdrom/VBoxLinuxAdditions.run
+      ansible.builtin.command: /tmp/vbox-mount/VBoxLinuxAdditions.run
       become: yes
       register: vbox_install
       failed_when: 
         - vbox_install.rc != 0
+        - vbox_install.rc != 2
         - "'already installed' not in vbox_install.stdout"
+        - "'Building the modules' not in vbox_install.stdout"
+      changed_when: "'Building the modules' in vbox_install.stdout"
+
+    - name: Debug Guest Additions Installation
+      ansible.builtin.debug:
+        msg: 
+          - "Return Code: {{ vbox_install.rc }}"
+          - "Installation erfolgreich: {{ 'Building the modules' in vbox_install.stdout }}"
 
     - name: Unmounte ISO
       ansible.builtin.mount:
-        path: /mnt/cdrom
+        path: /tmp/vbox-mount
         state: unmounted
       become: yes
 
-    - name: Cleanup ISO
+    - name: Cleanup
       ansible.builtin.file:
-        path: /tmp/VBoxGuestAdditions.iso
+        path: "{{ item }}"
         state: absent
       become: yes
-
-    - name: Reboot nach Guest Additions Installation
-      ansible.builtin.reboot:
-        reboot_timeout: 300
-      become: yes
-      when: vbox_install.rc == 0
+      loop:
+        - /tmp/VBoxGuestAdditions.iso
+        - /tmp/vbox-mount
 
     - name: Reboot System (localhost)
       ansible.builtin.shell: "sleep 2 && shutdown -r now 'Reboot durch Ansible'"
@@ -72,20 +80,17 @@
       async: 1
       poll: 0
       ignore_errors: true
-    
+
     - name: Warte auf Reboot
       ansible.builtin.pause:
-        seconds: 15
-    
-    - name: Warte bis System wieder erreichbar ist
-      ansible.builtin.wait_for:
-        port: 22
-        host: 127.0.0.1
-        delay: 10
-        timeout: 300
-      delegate_to: localhost
-      become: false
-    
+        seconds: 60
+        prompt: "⏳ Warte auf System-Reboot..."
+
+    - name: Test ob System wieder da ist
+      ansible.builtin.ping:
+      retries: 5
+      delay: 10
+
     - name: Weiter nach Reboot
       ansible.builtin.debug:
         msg: "✅ System neu gestartet, fahre fort..."
