@@ -8,7 +8,7 @@ Install following Linux Distro:
 Before beginning, run following commands:
 
 ```bash
-sudo apt update && sudo apt install git ansible -y
+sudo apt update && sudo apt install net-tools git nano ansible -y
 ```
 
 ## Clone This Repository
