@@ -1,4 +1,7 @@
 ---
+############################################
+# Validate required variables
+############################################
 - name: Validate required variables
   assert:
     that:
@@ -8,10 +11,10 @@
       - xibo_db_user is defined
       - xibo_db_password is defined
     fail_msg: "Required Xibo variables are missing"
-    
-# ==================================================
+
+############################################
 # Basis & Abhängigkeiten
-# ==================================================
+############################################
 - name: Install required packages
   become: yes
   apt:
@@ -30,29 +33,33 @@
     state: present
     update_cache: yes
 
-- name: Erstelle Docker CLI-Plugins Verzeichnis
-  ansible.builtin.file:
+############################################
+# Docker Compose V2 (nur wenn nötig)
+############################################
+- name: Check Docker Compose V2 binary
+  stat:
+    path: /usr/local/lib/docker/cli-plugins/docker-compose
+  register: compose_bin
+
+- name: Create Docker CLI plugin directory
+  file:
     path: /usr/local/lib/docker/cli-plugins
     state: directory
     mode: '0755'
   become: yes
+  when: not compose_bin.stat.exists
 
-- name: Installiere Docker Compose V2
-  ansible.builtin.get_url:
+- name: Install Docker Compose V2
+  get_url:
     url: https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64
     dest: /usr/local/lib/docker/cli-plugins/docker-compose
     mode: '0755'
   become: yes
+  when: not compose_bin.stat.exists
 
-- name: Verify Docker Compose Installation
-  ansible.builtin.command: docker compose version
-  register: compose_version
-  changed_when: false
-
-- name: Debug Compose Version
-  ansible.builtin.debug:
-    var: compose_version.stdout
-
+############################################
+# Docker Service
+############################################
 - name: Ensure Docker service is running
   become: yes
   service:
@@ -60,9 +67,9 @@
     state: started
     enabled: yes
 
-# ==================================================
+############################################
 # Verzeichnisstruktur
-# ==================================================
+############################################
 - name: Create Xibo directory structure
   become: yes
   file:
@@ -72,9 +79,9 @@
     group: xibo
     mode: '0755'
 
-# ==================================================
-# Docker Compose
-# ==================================================
+############################################
+# Docker Compose File
+############################################
 - name: Deploy Docker Compose file
   become: yes
   template:
@@ -84,10 +91,15 @@
     group: xibo
     mode: "0644"
 
-# ==================================================
-# config.env
-# ==================================================
-- name: Ensure config.env exists
+############################################
+# config.env – nur einmal erstellen
+############################################
+- name: Check if config.env exists
+  stat:
+    path: /opt/xibo-docker/config.env
+  register: config_env
+
+- name: Create config.env
   become: yes
   copy:
     dest: /opt/xibo-docker/config.env
@@ -100,17 +112,28 @@
       MYSQL_USER={{ xibo_db_user }}
       MYSQL_PASSWORD={{ xibo_db_password }}
       XMR_HOST=cms-xmr
+  when: not config_env.stat.exists
 
-# ==================================================
-# Xibo Stack starten
-# ==================================================
+############################################
+# Xibo Stack starten (nur wenn nicht läuft)
+############################################
+- name: Check running Xibo containers
+  shell: docker ps --format '{{ "{{.Names}}" }}' | grep -q xibo
+  register: xibo_running
+  failed_when: false
+  changed_when: false
+
 - name: Start Xibo stack
-  ansible.builtin.command:
+  command:
     cmd: docker compose up -d
     chdir: /opt/xibo-docker
   become: yes
+  when: xibo_running.rc != 0
 
-- name: Wait for Xibo CMS migration to finish
+############################################
+# Migration abwarten (nur einmal relevant)
+############################################
+- name: Wait for Xibo CMS migration
   shell: |
     docker logs {{ xibo_cms_container }} 2>&1 | grep -q "All Done. Took"
   register: migration_done
@@ -118,11 +141,10 @@
   delay: 10
   until: migration_done.rc == 0
   changed_when: false
-  failed_when: migration_done.rc != 0
 
-# ==================================================
-# Warten bis DB erreichbar (robust)
-# ==================================================
+############################################
+# DB erreichbar?
+############################################
 - name: Wait until DB accepts connections
   shell: |
     docker exec {{ xibo_db_container }} \
@@ -133,17 +155,63 @@
   until: db_ping.rc == 0
   changed_when: false
 
-# ==================================================
-# Admin-User prüfen & umbenennen
-# ==================================================
-- name: Check if default admin user xibo_admin exists
+############################################
+# Admin User prüfen
+############################################
+- name: Check if admin user exists
   shell: >
     docker exec {{ xibo_db_container }}
     mysql -N -s
     -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-    -e "SELECT COUNT(*) FROM user WHERE userName='xibo_admin';"
-  register: xibo_admin_exists
+    -e "SELECT COUNT(*) FROM user WHERE userName='{{ xibo_admin_new }}';"
+  register: admin_exists
   changed_when: false
+
+############################################
+# MySQL PROCESS Privileg nur wenn fehlt
+############################################
+- name: Check PROCESS privilege
+  shell: >
+    docker exec {{ xibo_db_container }}
+    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+    -e "SHOW GRANTS FOR '{{ xibo_db_user }}'@'%';" | grep -q PROCESS
+  register: process_priv
+  failed_when: false
+  changed_when: false
+
+- name: Grant PROCESS privilege
+  shell: >
+    docker exec xibo-db
+    mysql -u root -p{{ mysql_root_password_raw.stdout }}
+    -e "GRANT PROCESS ON *.* TO '{{ xibo_db_user }}'@'%'; FLUSH PRIVILEGES;"
+  when:
+    - mysql_root_password_raw.stdout != ""
+    - process_priv.rc != 0
+  changed_when: true
+
+############################################
+# Rechte auf private.key (idempotent)
+############################################
+- name: Set permissions on private.key
+  become: yes
+  file:
+    path: /opt/xibo-docker/shared/cms/library/certs/private.key
+    owner: www-data
+    group: www-data
+    mode: '0640'
+
+
+# ==================================================
+# Admin-User prüfen & umbenennen
+# ==================================================
+#- name: Check if default admin user xibo_admin exists
+#  shell: >
+#    docker exec {{ xibo_db_container }}
+#    mysql -N -s
+#    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+#    -e "SELECT COUNT(*) FROM user WHERE userName='xibo_admin';"
+#  register: xibo_admin_exists
+#  changed_when: false
 
 #- name: Check if target user xibo already exists
 #  shell: >
@@ -175,65 +243,65 @@
 # ==================================================
 # Passwort-Hash auslesen
 # ==================================================
-- name: Read current password hash
-  shell: |
-    docker exec {{ xibo_db_container }} \
-      mysql -N -s \
-      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
-      -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_new }}';"
-  register: current_hash
-  changed_when: false
+#- name: Read current password hash
+#  shell: |
+#    docker exec {{ xibo_db_container }} \
+#      mysql -N -s \
+#      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+#      -e "SELECT userPassword FROM user WHERE userName='{{ xibo_admin_new }}';"
+#  register: current_hash
+#  changed_when: false
 
 # ==================================================
 # Hash-Typ erkennen (MD5 vs bcrypt)
 # ==================================================
-- name: Check if password equals default "password"
-  copy:
-    dest: /tmp/check_xibo_password.py
-    mode: "0700"
-    content: |
-      import bcrypt, hashlib, sys
+#- name: Check if password equals default "password"
+#  copy:
+#    dest: /tmp/check_xibo_password.py
+#    mode: "0700"
+#    content: |
+#      import bcrypt, hashlib, sys
+#
+#      h = "{{ current_hash.stdout }}".strip()
 
-      h = "{{ current_hash.stdout }}".strip()
+#      # MD5 check
+#      if len(h) == 32:
+#          if h == hashlib.md5(b"password").hexdigest():
+#              print("true")
+#              sys.exit(0)
 
-      # MD5 check
-      if len(h) == 32:
-          if h == hashlib.md5(b"password").hexdigest():
-              print("true")
-              sys.exit(0)
+#      # bcrypt check
+#      if h.startswith("$2"):
+#          try:
+#              if bcrypt.checkpw(b"password", h.encode()):
+#                  print("true")
+#                  sys.exit(0)
+#          except ValueError:
+#              pass
 
-      # bcrypt check
-      if h.startswith("$2"):
-          try:
-              if bcrypt.checkpw(b"password", h.encode()):
-                  print("true")
-                  sys.exit(0)
-          except ValueError:
-              pass
+#      print("false")
 
-      print("false")
+#- name: Run password check
+#  command: python3 /tmp/check_xibo_password.py
+#  register: password_is_default
+#  changed_when: false
 
-- name: Run password check
-  command: python3 /tmp/check_xibo_password.py
-  register: password_is_default
-  changed_when: false
-
-- name: Remove password check script
-  file:
-    path: /tmp/check_xibo_password.py
-    state: absent
+#- name: Remove password check script
+#  file:
+#    path: /tmp/check_xibo_password.py
+#    state: absent
 
 # ==================================================
 # bcrypt erzeugen (nur wenn nötig)
 # ==================================================
-- name: Generate bcrypt hash for new password
-  shell: |
-    python3 <<'EOF'
-    import bcrypt
-    print(bcrypt.hashpw(b"xibo", bcrypt.gensalt()).decode())
-    EOF
-  register: xibo_bcrypt
-  changed_when: false
+#- name: Generate bcrypt hash for new password
+#  shell: |
+#    python3 <<'EOF'
+#    import bcrypt
+#    print(bcrypt.hashpw(b"xibo", bcrypt.gensalt()).decode())
+#    EOF
+#  register: xibo_bcrypt
+#  changed_when: false
 
 # ==================================================
 # Passwort aktualisieren (MD5 → bcrypt)
@@ -252,31 +320,18 @@
 # ==================================================
 # Xibo Prozess Privilegien auf mysql geben
 # ==================================================
-- name: Get generated MySQL root password from logs
-  shell: >
-    docker logs xibo-db 2>&1 |
-    grep "GENERATED ROOT PASSWORD" |
-    awk '{print $NF}'
-  register: mysql_root_password_raw
-  changed_when: false
+#- name: Get generated MySQL root password from logs
+#  shell: >
+#    docker logs xibo-db 2>&1 |
+#    grep "GENERATED ROOT PASSWORD" |
+#    awk '{print $NF}'
+#  register: mysql_root_password_raw
+#  changed_when: false
 
-- name: Grant PROCESS privilege to xibo database user
-  shell: >
-    docker exec xibo-db
-    mysql -u root -p{{ mysql_root_password_raw.stdout }}
-    -e "GRANT PROCESS ON *.* TO 'xibo'@'%'; FLUSH PRIVILEGES;"
-  when: mysql_root_password_raw.stdout != ""
-  changed_when: true
-
-# ==================================================
-# Xibo Berechtigungen auf private keys
-# ==================================================
-- name: Setze Gruppenleserechte auf private.key
-  become: yes
-  file:
-    path: /opt/xibo-docker/shared/cms/library/certs/private.key
-    mode: '0640'
-    owner: www-data
-    group: www-data
-
-
+#- name: Grant PROCESS privilege to xibo database user
+#  shell: >
+#    docker exec xibo-db
+#    mysql -u root -p{{ mysql_root_password_raw.stdout }}
+#    -e "GRANT PROCESS ON *.* TO 'xibo'@'%'; FLUSH PRIVILEGES;"
+#  when: mysql_root_password_raw.stdout != ""
+#  changed_when: true
