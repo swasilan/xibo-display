@@ -47,14 +47,11 @@
         mode: '0755'
       become: yes
 
-    - name: Temporäres Mounten der ISO
-      ansible.builtin.mount:
-        path: /tmp/vbox-mount
-        src: /tmp/VBoxGuestAdditions.iso
-        fstype: iso9660
-        opts: loop,ro
-        state: mounted
+    - name: Temporäres Mounten der ISO (nur für Installation)
+      ansible.builtin.command: mount -o loop,ro /tmp/VBoxGuestAdditions.iso /tmp/vbox-mount
       become: yes
+      register: mount_result
+      failed_when: mount_result.rc != 0
 
     - name: Installiere VirtualBox Guest Additions (force rebuild)
       ansible.builtin.command: /tmp/vbox-mount/VBoxLinuxAdditions.run --force
@@ -63,10 +60,9 @@
       failed_when: "'error' in vbox_install.stdout.lower()"
 
     - name: Unmount temporäre ISO
-      ansible.builtin.mount:
-        path: /tmp/vbox-mount
-        state: unmounted
+      ansible.builtin.command: umount /tmp/vbox-mount
       become: yes
+      ignore_errors: true
 
     - name: Cleanup temporäre Dateien
       ansible.builtin.file:
