@@ -1,24 +1,24 @@
+############################################
+# XFCE Config-Verzeichnisse
+############################################
 - name: XFCE Config-Verzeichnisse anlegen
-  file:
+  ansible.builtin.file:
     path: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml"
     state: directory
     owner: "{{ kiosk_user }}"
     group: "{{ kiosk_user }}"
     mode: '0755'
+  become: yes
 
-- name: XFCE Config-Verzeichnisse anlegen
-  file:
-    path: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml"
-    state: directory
-    owner: "{{ kiosk_user }}"
-    group: "{{ kiosk_user }}"
-    mode: '0755'
-
+############################################
+# XFCE Session absichern
+############################################
 - name: XFCE Session hart konfigurieren
-  copy:
+  ansible.builtin.copy:
     dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml"
     owner: "{{ kiosk_user }}"
     group: "{{ kiosk_user }}"
+    mode: '0644'
     content: |
       <?xml version="1.0" encoding="UTF-8"?>
       <channel name="xfce4-session" version="1.0">
@@ -28,12 +28,17 @@
           <property name="LockScreen" type="bool" value="false"/>
         </property>
       </channel>
+  become: yes
 
-- name: XFCE Power Manager konfigurieren (kein Standby)
-  copy:
+############################################
+# Power Management deaktivieren
+############################################
+- name: XFCE Power Manager konfigurieren
+  ansible.builtin.copy:
     dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml"
     owner: "{{ kiosk_user }}"
     group: "{{ kiosk_user }}"
+    mode: '0644'
     content: |
       <?xml version="1.0" encoding="UTF-8"?>
       <channel name="xfce4-power-manager" version="1.0">
@@ -46,16 +51,43 @@
           <property name="lid-action-on-battery" type="int" value="0"/>
         </property>
       </channel>
+  become: yes
 
-#- name: LightDM Autologin für Kiosk-User konfigurieren
-#  copy:
-#    dest: /etc/lightdm/lightdm.conf.d/50-kiosk.conf
-#    content: |
-#      [Seat:*]
-#      autologin-user={{ kiosk_user }}
-#      autologin-user-timeout=0
-#      greeter-session=lightdm-gtk-greeter
-#      user-session=xfce
-#    owner: root
-#    group: root
-#    mode: '0644'
+############################################
+# LightDM Autologin
+############################################
+- name: LightDM Autologin für Kiosk-User
+  ansible.builtin.copy:
+    dest: /etc/lightdm/lightdm.conf.d/50-kiosk.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Seat:*]
+      autologin-user={{ kiosk_user }}
+      autologin-user-timeout=0
+      greeter-session=lightdm-gtk-greeter
+      user-session=xfce
+  become: yes
+
+############################################
+# LightDM aktivieren
+############################################
+- name: LightDM aktivieren
+  ansible.builtin.systemd:
+    name: lightdm
+    enabled: yes
+  become: yes
+
+############################################
+# HINWEIS ZUM REBOOT
+############################################
+- name: Hinweis Reboot notwendig
+  ansible.builtin.debug:
+    msg: |
+      ✅ Installation abgeschlossen.
+      🔁 Ein REBOOT ist notwendig, damit:
+        - VirtualBox Module sauber aktiv sind
+        - LightDM Autologin greift
+      👉 Bitte jetzt manuell rebooten:
+         sudo reboot
