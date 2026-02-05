@@ -4,95 +4,113 @@
   when: not (virtualbox_guest_additions_enabled | default(false))
 
 - block:
-    - name: Installiere VirtualBox Guest Additions Abhängigkeiten
-      ansible.builtin.apt:
-        name:
-          - build-essential
-          - dkms
-          - linux-headers-{{ ansible_kernel }}
-        state: present
-        update_cache: yes
-      become: yes
-
-    - name: Unmounte /tmp/vbox-mount falls bereits gemountet
-      ansible.builtin.command: umount /tmp/vbox-mount
-      become: yes
-      ignore_errors: yes
+    - name: Prüfe ob VirtualBox Guest Additions bereits installiert sind
+      ansible.builtin.command: modinfo vboxguest
+      register: vbox_check
+      failed_when: false
       changed_when: false
 
-    - name: Download VirtualBox Guest Additions ISO
-      ansible.builtin.get_url:
-        url: "https://download.virtualbox.org/virtualbox/7.0.14/VBoxGuestAdditions_7.0.14.iso"
-        dest: /tmp/VBoxGuestAdditions.iso
-      become: yes
-
-    - name: Erstelle temporäres Mount-Verzeichnis
-      ansible.builtin.file:
-        path: /tmp/vbox-mount
-        state: directory
-        mode: '0755'
-      become: yes
-
-    - name: Mounte ISO
-      ansible.builtin.mount:
-        path: /tmp/vbox-mount
-        src: /tmp/VBoxGuestAdditions.iso
-        fstype: iso9660
-        opts: loop,ro
-        state: mounted
-      become: yes
-
-    - name: Installiere VirtualBox Guest Additions
-      ansible.builtin.command: /tmp/vbox-mount/VBoxLinuxAdditions.run
-      become: yes
-      register: vbox_install
-      failed_when: 
-        - vbox_install.rc != 0
-        - vbox_install.rc != 2
-        - "'already installed' not in vbox_install.stdout"
-        - "'Building the modules' not in vbox_install.stdout"
-      changed_when: "'Building the modules' in vbox_install.stdout"
-
-    - name: Debug Guest Additions Installation
+    - name: Debug VirtualBox Status
       ansible.builtin.debug:
-        msg: 
-          - "Return Code: {{ vbox_install.rc }}"
-          - "Installation erfolgreich: {{ 'Building the modules' in vbox_install.stdout }}"
+        msg: "VirtualBox Guest Additions bereits installiert: {{ vbox_check.rc == 0 }}"
 
-    - name: Unmounte ISO
-      ansible.builtin.mount:
-        path: /tmp/vbox-mount
-        state: unmounted
-      become: yes
-
-    - name: Cleanup
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      become: yes
-      loop:
-        - /tmp/VBoxGuestAdditions.iso
-        - /tmp/vbox-mount
-
-    - name: Reboot System (localhost)
-      ansible.builtin.shell: "sleep 2 && shutdown -r now 'Reboot durch Ansible'"
-      become: yes
-      async: 1
-      poll: 0
-      ignore_errors: true
-
-    - name: Warte auf Reboot
-      ansible.builtin.pause:
-        seconds: 60
-        prompt: "⏳ Warte auf System-Reboot..."
-
-    - name: Test ob System wieder da ist
-      ansible.builtin.ping:
-      retries: 5
-      delay: 10
-
-    - name: Weiter nach Reboot
+    - name: Skip wenn bereits installiert
       ansible.builtin.debug:
-        msg: "✅ System neu gestartet, fahre fort..."
+        msg: "✅ VirtualBox Guest Additions bereits installiert, überspringe Installation"
+      when: vbox_check.rc == 0
+
+    - block:
+        - name: Installiere VirtualBox Guest Additions Abhängigkeiten
+          ansible.builtin.apt:
+            name:
+              - build-essential
+              - dkms
+              - linux-headers-{{ ansible_kernel }}
+            state: present
+            update_cache: yes
+          become: yes
+
+        - name: Unmounte /tmp/vbox-mount falls bereits gemountet
+          ansible.builtin.command: umount /tmp/vbox-mount
+          become: yes
+          ignore_errors: yes
+          changed_when: false
+
+        - name: Download VirtualBox Guest Additions ISO
+          ansible.builtin.get_url:
+            url: "https://download.virtualbox.org/virtualbox/7.0.14/VBoxGuestAdditions_7.0.14.iso"
+            dest: /tmp/VBoxGuestAdditions.iso
+          become: yes
+
+        - name: Erstelle temporäres Mount-Verzeichnis
+          ansible.builtin.file:
+            path: /tmp/vbox-mount
+            state: directory
+            mode: '0755'
+          become: yes
+
+        - name: Mounte ISO
+          ansible.builtin.mount:
+            path: /tmp/vbox-mount
+            src: /tmp/VBoxGuestAdditions.iso
+            fstype: iso9660
+            opts: loop,ro
+            state: mounted
+          become: yes
+
+        - name: Installiere VirtualBox Guest Additions
+          ansible.builtin.command: /tmp/vbox-mount/VBoxLinuxAdditions.run
+          become: yes
+          register: vbox_install
+          failed_when: 
+            - vbox_install.rc != 0
+            - vbox_install.rc != 2
+            - "'already installed' not in vbox_install.stdout"
+            - "'Building the modules' not in vbox_install.stdout"
+          changed_when: "'Building the modules' in vbox_install.stdout"
+
+        - name: Debug Guest Additions Installation
+          ansible.builtin.debug:
+            msg: 
+              - "Return Code: {{ vbox_install.rc }}"
+              - "Installation erfolgreich: {{ 'Building the modules' in vbox_install.stdout }}"
+
+        - name: Unmounte ISO
+          ansible.builtin.mount:
+            path: /tmp/vbox-mount
+            state: unmounted
+          become: yes
+
+        - name: Cleanup
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          become: yes
+          loop:
+            - /tmp/VBoxGuestAdditions.iso
+            - /tmp/vbox-mount
+
+        - name: Reboot System (localhost)
+          ansible.builtin.shell: "sleep 2 && shutdown -r now 'Reboot durch Ansible'"
+          become: yes
+          async: 1
+          poll: 0
+          ignore_errors: true
+
+        - name: Warte auf Reboot
+          ansible.builtin.pause:
+            seconds: 60
+            prompt: "⏳ Warte auf System-Reboot..."
+
+        - name: Test ob System wieder da ist
+          ansible.builtin.ping:
+          retries: 5
+          delay: 10
+
+        - name: Weiter nach Reboot
+          ansible.builtin.debug:
+            msg: "✅ System neu gestartet, fahre fort..."
+
+      when: vbox_check.rc != 0  # Nur wenn NICHT installiert
 
   when: virtualbox_guest_additions_enabled | default(false)
