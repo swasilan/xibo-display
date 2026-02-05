@@ -1,7 +1,0 @@
-- name: LightDM Autologin konfigurieren
-  copy:
-    dest: /etc/lightdm/lightdm.conf.d/50-kiosk.conf
-    content: |
-      [Seat:*]
-      autologin-user={{ kiosk_user }}
-      autologin-user-timeout=0
