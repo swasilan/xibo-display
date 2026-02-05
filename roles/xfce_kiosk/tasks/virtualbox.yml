@@ -102,6 +102,13 @@
       become: yes
       force: no  # nicht überschreiben, wenn schon korrekt vorhanden
 
+    - name: Reboot System (localhost)
+      ansible.builtin.shell: shutdown -r now "Reboot durch Ansible"
+      become: yes
+      async: 1
+      poll: 0
+      ignore_errors: true
+
     - name: Prüfe, ob die Module jetzt geladen sind
       ansible.builtin.shell: lsmod | grep '^vbox'
       register: vbox_modules
