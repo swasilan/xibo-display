@@ -1,117 +1,125 @@
 ############################################
-# XFCE Config-Verzeichnisse
+# Prüfe ob XFCE Kiosk Setup bereits durchgeführt wurde
 ############################################
-- name: XFCE Config-Verzeichnisse anlegen
-  ansible.builtin.file:
-    path: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml"
-    state: directory
-    owner: "{{ kiosk_user }}"
-    group: "{{ kiosk_user }}"
-    mode: '0755'
-  become: yes
-
-############################################
-# XFCE Session absichern
-############################################
-- name: XFCE Session hart konfigurieren
-  ansible.builtin.copy:
-    dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml"
-    owner: "{{ kiosk_user }}"
-    group: "{{ kiosk_user }}"
-    mode: '0644'
-    content: |
-      <?xml version="1.0" encoding="UTF-8"?>
-      <channel name="xfce4-session" version="1.0">
-        <property name="general" type="empty">
-          <property name="SaveOnExit" type="bool" value="false"/>
-          <property name="LockCommand" type="string" value=""/>
-          <property name="LockScreen" type="bool" value="false"/>
-        </property>
-      </channel>
-  become: yes
-
-############################################
-# Power Management deaktivieren
-############################################
-- name: XFCE Power Manager konfigurieren
-  ansible.builtin.copy:
-    dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml"
-    owner: "{{ kiosk_user }}"
-    group: "{{ kiosk_user }}"
-    mode: '0644'
-    content: |
-      <?xml version="1.0" encoding="UTF-8"?>
-      <channel name="xfce4-power-manager" version="1.0">
-        <property name="xfce4-power-manager" type="empty">
-          <property name="blank-on-ac" type="int" value="0"/>
-          <property name="dpms-enabled" type="bool" value="false"/>
-          <property name="sleep-display-ac" type="int" value="0"/>
-          <property name="sleep-display-battery" type="int" value="0"/>
-          <property name="lid-action-on-ac" type="int" value="0"/>
-          <property name="lid-action-on-battery" type="int" value="0"/>
-        </property>
-      </channel>
-  become: yes
-
-############################################
-# LightDM Autologin
-############################################
-- name: LightDM Autologin für Kiosk-User
-  ansible.builtin.copy:
-    dest: /etc/lightdm/lightdm.conf.d/50-kiosk.conf
-    owner: root
-    group: root
-    mode: '0644'
-    content: |
-      [Seat:*]
-      autologin-user={{ kiosk_user }}
-      autologin-user-timeout=0
-      greeter-session=lightdm-gtk-greeter
-      user-session=xfce
-  become: yes
-
-############################################
-# LightDM aktivieren
-############################################
-- name: LightDM aktivieren
-  ansible.builtin.systemd:
-    name: lightdm
-    enabled: yes
-  become: yes
-
-############################################
-# REBOOT
-############################################
-- name: Prüfe ob Reboot bereits durchgeführt wurde
+- name: Prüfe ob XFCE Kiosk bereits konfiguriert ist
   ansible.builtin.stat:
-    path: /var/run/xfce-kiosk-rebooted
-  register: reboot_done
+    path: /etc/xfce-kiosk-setup-completed
+  register: xfce_setup_done
 
-- name: Reboot Kiosk (nur einmal)
-  ansible.builtin.shell: "sleep 2 && shutdown -r now 'Reboot durch Ansible'"
-  become: yes
-  async: 1
-  poll: 0
-  ignore_errors: true
-  when: not reboot_done.stat.exists
-
-- name: Erstelle Reboot-Marker für nächsten Run
-  ansible.builtin.file:
-    path: /var/run/xfce-kiosk-rebooted
-    state: touch
-    mode: '0644'
-  become: yes
-  when: not reboot_done.stat.exists
-
-- name: Info wenn Reboot übersprungen wird
+- name: Skip XFCE Kiosk Setup
   ansible.builtin.debug:
-    msg: "ℹ️ Reboot bereits durchgeführt, überspringe..."
-  when: reboot_done.stat.exists
+    msg: "ℹ️ XFCE Kiosk Setup bereits abgeschlossen, überspringe..."
+  when: xfce_setup_done.stat.exists
 
-- name: Manuelle Pause für Reboot
-  ansible.builtin.pause:
-    prompt: |
-      ⚠️ System wird jetzt neu gestartet.
-      Bitte warte bis System neu gestartet ist, dann drücke ENTER um fortzufahren.
-  when: not reboot_done.stat.exists
+############################################
+# XFCE Kiosk Komplett-Setup (nur einmal)
+############################################
+- block:
+    ############################################
+    # XFCE Config-Verzeichnisse
+    ############################################
+    - name: XFCE Config-Verzeichnisse anlegen
+      ansible.builtin.file:
+        path: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml"
+        state: directory
+        owner: "{{ kiosk_user }}"
+        group: "{{ kiosk_user }}"
+        mode: '0755'
+      become: yes
 
+    ############################################
+    # XFCE Session absichern
+    ############################################
+    - name: XFCE Session hart konfigurieren
+      ansible.builtin.copy:
+        dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml"
+        owner: "{{ kiosk_user }}"
+        group: "{{ kiosk_user }}"
+        mode: '0644'
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-session" version="1.0">
+            <property name="general" type="empty">
+              <property name="SaveOnExit" type="bool" value="false"/>
+              <property name="LockCommand" type="string" value=""/>
+              <property name="LockScreen" type="bool" value="false"/>
+            </property>
+          </channel>
+      become: yes
+
+    ############################################
+    # Power Management deaktivieren
+    ############################################
+    - name: XFCE Power Manager konfigurieren
+      ansible.builtin.copy:
+        dest: "{{ kiosk_home }}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml"
+        owner: "{{ kiosk_user }}"
+        group: "{{ kiosk_user }}"
+        mode: '0644'
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-power-manager" version="1.0">
+            <property name="xfce4-power-manager" type="empty">
+              <property name="blank-on-ac" type="int" value="0"/>
+              <property name="dpms-enabled" type="bool" value="false"/>
+              <property name="sleep-display-ac" type="int" value="0"/>
+              <property name="sleep-display-battery" type="int" value="0"/>
+              <property name="lid-action-on-ac" type="int" value="0"/>
+              <property name="lid-action-on-battery" type="int" value="0"/>
+            </property>
+          </channel>
+      become: yes
+
+    ############################################
+    # LightDM Autologin
+    ############################################
+    - name: LightDM Autologin für Kiosk-User
+      ansible.builtin.copy:
+        dest: /etc/lightdm/lightdm.conf.d/50-kiosk.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Seat:*]
+          autologin-user={{ kiosk_user }}
+          autologin-user-timeout=0
+          greeter-session=lightdm-gtk-greeter
+          user-session=xfce
+      become: yes
+
+    ############################################
+    # LightDM aktivieren
+    ############################################
+    - name: LightDM aktivieren
+      ansible.builtin.systemd:
+        name: lightdm
+        enabled: yes
+      become: yes
+
+    ############################################
+    # Setup als abgeschlossen markieren
+    ############################################
+    - name: Markiere XFCE Kiosk Setup als abgeschlossen
+      ansible.builtin.file:
+        path: /etc/xfce-kiosk-setup-completed
+        state: touch
+        mode: '0644'
+      become: yes
+
+    ############################################
+    # REBOOT
+    ############################################
+    - name: Reboot Kiosk (einmalig nach Setup)
+      ansible.builtin.shell: "sleep 2 && shutdown -r now 'Initial XFCE Setup Reboot'"
+      become: yes
+      async: 1
+      poll: 0
+      ignore_errors: true
+
+    - name: Manuelle Pause für Reboot
+      ansible.builtin.pause:
+        prompt: |
+          ⚠️ XFCE Setup abgeschlossen. System wird jetzt neu gestartet.
+          Bitte warte bis System neu gestartet ist, dann drücke ENTER um mit weiteren Tasks fortzufahren.
+
+  when: not xfce_setup_done.stat.exists
