@@ -4,6 +4,7 @@ xibo_base_path: /opt/xibo-docker
 xibo_env_file: config.env
 
 xibo_db_image: mysql:8.4
+xibo_db_root_password: rootpass
 xibo_db_container: xibo-db
 xibo_db_name: xibo
 xibo_db_user: xibo
