@@ -11,7 +11,7 @@ services:
       MYSQL_DATABASE: {{ xibo_db_name }}
       MYSQL_USER: {{ xibo_db_user }}
       MYSQL_PASSWORD: {{ xibo_db_password }}
-      MYSQL_RANDOM_ROOT_PASSWORD: {{ xibo_db_root_password }}
+      MYSQL_ROOT_PASSWORD: {{ xibo_db_root_password }}
     volumes:
       - {{ xibo_base_path | default("/opt/xibo") }}/shared/db:/var/lib/mysql:Z
 
