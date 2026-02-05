@@ -29,13 +29,16 @@
   failed_when: false
   changed_when: false
 
-- name: Grant PROCESS privilege (root via socket)
+- name: Grant PROCESS privilege (root via env)
   shell: >
     docker exec {{ xibo_db_container }}
-    mysql -u root
+    mysql -u root -p"$MYSQL_ROOT_PASSWORD"
     -e "GRANT PROCESS ON *.* TO '{{ xibo_db_user }}'@'%'; FLUSH PRIVILEGES;"
+  environment:
+    MYSQL_ROOT_PASSWORD: "{{ lookup('ansible.builtin.env', 'MYSQL_ROOT_PASSWORD') | default('rootpass') }}"
   when: process_priv.rc != 0
   changed_when: true
+  no_log: true
 
 # ==================================================
 # backup_state Tabelle + Default-Row (im DB-Container)
