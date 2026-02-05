@@ -1,8 +1,8 @@
 # ---------------------------------------------------------
-# Idempotente VirtualBox Guest Additions + Module + Reboot
+# VirtualBox Guest Additions – idempotent + boot-sicher
 # ---------------------------------------------------------
 
-- name: Prüfe, ob System in VirtualBox läuft
+- name: Prüfe, ob wir in VirtualBox laufen
   ansible.builtin.debug:
     msg: "🖥️ VirtualBox erkannt"
   when: ansible_virtualization_type == "virtualbox"
@@ -21,6 +21,7 @@
 
 - block:
 
+    # 1️⃣ Dependencies installieren
     - name: Installiere Abhängigkeiten für Guest Additions
       ansible.builtin.apt:
         name:
@@ -31,29 +32,24 @@
         update_cache: yes
       become: yes
 
-    - name: Entferne evtl. alte VBox-Module vor Installation
-      ansible.builtin.shell: |
-        rmmod vboxvideo vboxguest vboxsf 2>/dev/null || true
-      become: yes
-      changed_when: false
-
-    - name: Download VirtualBox Guest Additions ISO nur falls nicht vorhanden
+    # 2️⃣ Temporäre Installation der GA
+    - name: Download VirtualBox Guest Additions ISO
       ansible.builtin.get_url:
         url: "https://download.virtualbox.org/virtualbox/{{ virtualbox_version }}/VBoxGuestAdditions_{{ virtualbox_version }}.iso"
         dest: /tmp/VBoxGuestAdditions.iso
         mode: '0644'
       become: yes
 
-    - name: Erstelle Mountpunkt
+    - name: Erstelle temporären Mountpunkt
       ansible.builtin.file:
-        path: /mnt/vbox
+        path: /tmp/vbox-mount
         state: directory
         mode: '0755'
       become: yes
 
-    - name: Mount Guest Additions ISO
+    - name: Temporäres Mounten der ISO
       ansible.builtin.mount:
-        path: /mnt/vbox
+        path: /tmp/vbox-mount
         src: /tmp/VBoxGuestAdditions.iso
         fstype: iso9660
         opts: loop,ro
@@ -61,26 +57,27 @@
       become: yes
 
     - name: Installiere VirtualBox Guest Additions (force rebuild)
-      ansible.builtin.command: /mnt/vbox/VBoxLinuxAdditions.run --force
+      ansible.builtin.command: /tmp/vbox-mount/VBoxLinuxAdditions.run --force
       become: yes
       register: vbox_install
       failed_when: "'error' in vbox_install.stdout.lower()"
 
-    - name: Unmount ISO
+    - name: Unmount temporäre ISO
       ansible.builtin.mount:
-        path: /mnt/vbox
+        path: /tmp/vbox-mount
         state: unmounted
       become: yes
 
-    - name: Cleanup ISO & Mountpunkt
+    - name: Cleanup temporäre Dateien
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
-      become: yes
       loop:
-        - /mnt/vbox
         - /tmp/VBoxGuestAdditions.iso
+        - /tmp/vbox-mount
+      become: yes
 
+    # 3️⃣ Module laden
     - name: Lade VBox Kernel-Module falls noch nicht geladen
       ansible.builtin.shell: |
         for mod in vboxguest vboxvideo vboxsf; do
@@ -99,15 +96,8 @@
         owner: root
         group: root
         mode: '0644'
-        force: no   # <--- richtig eingerückt unter 'copy'
+        force: no
       become: yes
-
-    - name: Reboot System (localhost)
-      ansible.builtin.shell: shutdown -r now "Reboot durch Ansible"
-      become: yes
-      async: 1
-      poll: 0
-      ignore_errors: true
 
     - name: Prüfe, ob die Module jetzt geladen sind
       ansible.builtin.shell: lsmod | grep '^vbox'
@@ -119,7 +109,8 @@
       ansible.builtin.debug:
         var: vbox_modules.stdout
 
-    - name: Reboot nur, falls Module noch nicht geladen waren
+    # 4️⃣ Reboot (nur, wenn Module vorher nicht geladen waren)
+    - name: Reboot System (localhost) falls nötig
       ansible.builtin.reboot:
         reboot_timeout: 300
         msg: "Reboot nach Installation von VirtualBox Guest Additions"
