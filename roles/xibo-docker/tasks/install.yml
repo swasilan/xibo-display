@@ -168,26 +168,6 @@
   changed_when: false
 
 ############################################
-# MySQL PROCESS Privileg nur wenn fehlt
-############################################
-- name: Check PROCESS privilege
-  shell: >
-    docker exec {{ xibo_db_container }}
-    mysql -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-    -e "SHOW GRANTS FOR '{{ xibo_db_user }}'@'%';" | grep -q PROCESS
-  register: process_priv
-  failed_when: false
-  changed_when: false
-
-- name: Grant PROCESS privilege
-  shell: >
-    docker exec {{ xibo_db_container }}
-    mysql -u root -prootpass
-    -e "GRANT PROCESS ON *.* TO '{{ xibo_db_user }}'@'%'; FLUSH PRIVILEGES;"
-  when: process_priv.rc != 0
-  changed_when: true
-
-############################################
 # Rechte auf private.key (idempotent)
 ############################################
 - name: Set permissions on private.key
