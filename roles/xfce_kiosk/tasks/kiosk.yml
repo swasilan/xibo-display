@@ -82,7 +82,22 @@
 ############################################
 # REBOOT
 ############################################
-- name: Reboot
-  ansible.builtin.reboot:
+- name: Prüfe ob Reboot bereits durchgeführt wurde
+  stat:
+    path: /var/run/kiosk_reboot_done
+  register: reboot_done
+
+- name: Reboot Kiosk (nur einmal)
+  reboot:
     reboot_timeout: 600
+  when: not reboot_done.stat.exists
+  become: yes
+
+- name: Marker-Datei nach Reboot anlegen
+  file:
+    path: /var/run/kiosk_reboot_done
+    state: touch
+  when: not reboot_done.stat.exists
+  become: yes
+
 
