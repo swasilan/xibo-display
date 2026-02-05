@@ -1,3 +1,28 @@
+################################################################################
+# Xibo Digital Signage - Standalone Installation
+################################################################################
+# 
+# Dieses Playbook richtet eine vollständige Xibo Digital Signage Lösung auf
+# einer einzelnen Maschine ein:
+#
+#   - Xibo CMS (Docker-basiert)
+#   - Xibo Player (Snap-basiert)
+#   - XFCE Kiosk-Modus für automatischen Player-Start
+#   - Automatische Konfiguration und Verbindung zwischen CMS und Player
+#
+# Die Installation erfolgt vollautomatisch inklusive Reboots und setzt nach
+# jedem Neustart automatisch fort bis das Setup vollständig abgeschlossen ist.
+#
+# Voraussetzungen:
+#   - Ubuntu Server 24.04 LTS
+#   - Mindestens 4GB RAM, 20GB Festplatte
+#   - Internetzugang
+#
+# Verwendung:
+#   ansible-playbook -i hosts playbook.yml
+#
+################################################################################
+
 - name: Lokale Basiskonfiguration
   hosts: local
   gather_facts: yes
@@ -6,8 +31,57 @@
     local_user: "{{ lookup('env','USER') }}"
   vars_files:
     - group_vars/secrets.yml  # Explizit laden
+
+  pre_tasks:
+    - name: Erstelle Ansible auto-continue Service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ansible-continue.service
+        content: |
+          [Unit]
+          Description=Continue Ansible Playbook after reboot
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          User={{ local_user }}
+          WorkingDirectory={{ playbook_dir }}
+          ExecStart=/usr/bin/ansible-playbook -i hosts playbook.yml
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+
+    - name: Enable Ansible auto-continue Service
+      ansible.builtin.systemd:
+        name: ansible-continue
+        enabled: yes
+        daemon_reload: yes
+
   roles:
     - base
     - xibo-docker
     - xfce_kiosk
     - xibo-player
+
+  post_tasks:
+    - name: Prüfe ob alle Setups abgeschlossen sind
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: setup_markers
+      loop:
+        - /etc/xfce-kiosk-setup-completed
+        - /etc/xibo-player-setup-completed
+
+    - name: Deaktiviere auto-continue Service (Setup fertig)
+      ansible.builtin.systemd:
+        name: ansible-continue
+        enabled: no
+        state: stopped
+      when: setup_markers.results | selectattr('stat.exists') | list | length == 2
+
+    - name: Setup abgeschlossen
+      ansible.builtin.debug:
+        msg: "🎉 Komplettes Xibo Display Setup erfolgreich abgeschlossen!"
+      when: setup_markers.results | selectattr('stat.exists') | list | length == 2
