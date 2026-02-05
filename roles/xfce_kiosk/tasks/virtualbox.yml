@@ -14,26 +14,30 @@
         update_cache: yes
       become: yes
 
-    - name: Erstelle Mount-Point für CD-ROM
-      ansible.builtin.file:
-        path: /mnt/cdrom
-        state: directory
-        mode: '0755'
-      become: yes
-
     - name: Download VirtualBox Guest Additions ISO
       ansible.builtin.get_url:
         url: "https://download.virtualbox.org/virtualbox/7.0.14/VBoxGuestAdditions_7.0.14.iso"
         dest: /tmp/VBoxGuestAdditions.iso
       become: yes
 
+    - name: Erstelle temporäres Mount-Verzeichnis
+      ansible.builtin.file:
+        path: /tmp/vbox-mount
+        state: directory
+        mode: '0755'
+      become: yes
+    
     - name: Mounte ISO
       ansible.builtin.mount:
-        path: /mnt/cdrom
+        path: /tmp/vbox-mount
         src: /tmp/VBoxGuestAdditions.iso
         fstype: iso9660
         opts: loop,ro
         state: mounted
+      become: yes
+    
+    - name: Installiere Guest Additions
+      ansible.builtin.command: /tmp/vbox-mount/VBoxLinuxAdditions.run
       become: yes
 
     - name: Installiere VirtualBox Guest Additions
