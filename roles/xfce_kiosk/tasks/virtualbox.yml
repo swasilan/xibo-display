@@ -1,13 +1,13 @@
 # ---------------------------------------------------------
-# VirtualBox Guest Additions (nur wenn VM + aktiviert)
+# Idempotente VirtualBox Guest Additions + Module + Reboot
 # ---------------------------------------------------------
 
-- name: Prüfe ob System in VirtualBox läuft
+- name: Prüfe, ob System in VirtualBox läuft
   ansible.builtin.debug:
     msg: "🖥️ VirtualBox erkannt"
   when: ansible_virtualization_type == "virtualbox"
 
-- name: Prüfe ob vboxvideo geladen ist (X-tauglich)
+- name: Prüfe, ob vboxvideo geladen ist (X-tauglich)
   ansible.builtin.shell: lsmod | grep -q '^vboxvideo'
   register: vboxvideo_check
   failed_when: false
@@ -31,13 +31,13 @@
         update_cache: yes
       become: yes
 
-    - name: Entferne evtl. geladene alte VBox-Module
+    - name: Entferne evtl. alte VBox-Module vor Installation
       ansible.builtin.shell: |
         rmmod vboxvideo vboxguest vboxsf 2>/dev/null || true
       become: yes
       changed_when: false
 
-    - name: Download VirtualBox Guest Additions ISO
+    - name: Download VirtualBox Guest Additions ISO nur falls nicht vorhanden
       ansible.builtin.get_url:
         url: "https://download.virtualbox.org/virtualbox/{{ virtualbox_version }}/VBoxGuestAdditions_{{ virtualbox_version }}.iso"
         dest: /tmp/VBoxGuestAdditions.iso
@@ -81,28 +81,44 @@
         - /mnt/vbox
         - /tmp/VBoxGuestAdditions.iso
 
-    - name: Reboot nach Guest Additions Installation
+    - name: Lade VBox Kernel-Module falls noch nicht geladen
+      ansible.builtin.shell: |
+        for mod in vboxguest vboxvideo vboxsf; do
+          lsmod | grep -q "^$mod" || modprobe $mod
+        done
+      become: yes
+      changed_when: false
+
+    - name: Module automatisch beim Boot laden (idempotent)
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/vbox.conf
+        content: |
+          vboxguest
+          vboxvideo
+          vboxsf
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+      force: no  # nicht überschreiben, wenn schon korrekt vorhanden
+
+    - name: Prüfe, ob die Module jetzt geladen sind
+      ansible.builtin.shell: lsmod | grep '^vbox'
+      register: vbox_modules
+      changed_when: false
+      become: yes
+
+    - name: Debug VBox Module
+      ansible.builtin.debug:
+        var: vbox_modules.stdout
+
+    - name: Reboot nur, falls Module noch nicht geladen waren
       ansible.builtin.reboot:
         reboot_timeout: 300
-        msg: "Reboot nach VirtualBox Guest Additions"
+        msg: "Reboot nach Installation von VirtualBox Guest Additions"
       become: yes
+      when: vboxvideo_check.rc != 0
 
   when:
     - virtualbox_guest_additions_enabled | default(false)
     - ansible_virtualization_type == "virtualbox"
-    - vboxvideo_check.rc != 0
-
-# ---------------------------------------------------------
-# Post-Check (hartes Erfolgskriterium)
-# ---------------------------------------------------------
-
-- name: Verifiziere geladene VBox Kernel-Module
-  ansible.builtin.shell: lsmod | grep '^vbox'
-  register: vbox_modules
-  changed_when: false
-  when: ansible_virtualization_type == "virtualbox"
-
-- name: Debug VBox Module
-  ansible.builtin.debug:
-    var: vbox_modules.stdout
-  when: ansible_virtualization_type == "virtualbox"
