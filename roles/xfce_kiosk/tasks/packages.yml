@@ -1,12 +1,17 @@
-- name: Installiere XFCE minimal + Display Manager
-  apt:
+############################################
+# XFCE minimal installieren
+############################################
+- name: Installiere XFCE minimal + LightDM
+  ansible.builtin.apt:
     name:
       - xfce4-session
       - xfwm4
       - xfconf
+      - xfce4-power-manager
       - lightdm
       - lightdm-gtk-greeter
       - dbus-x11
       - x11-xserver-utils
     state: present
     update_cache: yes
+  become: yes
