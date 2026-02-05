@@ -181,12 +181,10 @@
 
 - name: Grant PROCESS privilege
   shell: >
-    docker exec xibo-db
-    mysql -u root -p{{ mysql_root_password_raw.stdout }}
+    docker exec {{ xibo_db_container }}
+    mysql -u root -prootpass
     -e "GRANT PROCESS ON *.* TO '{{ xibo_db_user }}'@'%'; FLUSH PRIVILEGES;"
-  when:
-    - mysql_root_password_raw.stdout != ""
-    - process_priv.rc != 0
+  when: process_priv.rc != 0
   changed_when: true
 
 ############################################
@@ -317,21 +315,3 @@
 #  when: password_is_default
 #  changed_when: true
 
-# ==================================================
-# Xibo Prozess Privilegien auf mysql geben
-# ==================================================
-#- name: Get generated MySQL root password from logs
-#  shell: >
-#    docker logs xibo-db 2>&1 |
-#    grep "GENERATED ROOT PASSWORD" |
-#    awk '{print $NF}'
-#  register: mysql_root_password_raw
-#  changed_when: false
-
-#- name: Grant PROCESS privilege to xibo database user
-#  shell: >
-#    docker exec xibo-db
-#    mysql -u root -p{{ mysql_root_password_raw.stdout }}
-#    -e "GRANT PROCESS ON *.* TO 'xibo'@'%'; FLUSH PRIVILEGES;"
-#  when: mysql_root_password_raw.stdout != ""
-#  changed_when: true
