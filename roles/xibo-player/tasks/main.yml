@@ -70,23 +70,46 @@
 # -------------------------
 # Configure Xibo Player
 # -------------------------
-- name: Set cmsAddress
-  ansible.builtin.replace:
-    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
-    regexp: '<cmsAddress>.*?</cmsAddress>'
-    replace: '<cmsAddress>{{ xibo_cms_url }}</cmsAddress>'
+- name: Erstelle Snap common Verzeichnis
+  ansible.builtin.file:
+    path: "/home/{{ kiosk_user }}/snap/xibo-player/common"
+    state: directory
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: '0755'
+  become: yes
 
-- name: Set key
-  ansible.builtin.replace:
-    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
-    regexp: '<key>.*?</key>'
-    replace: '<key>{{ xibo_server_key }}</key>'
+- name: Generiere zufällige Display ID
+  ansible.builtin.set_fact:
+    xibo_display_id: "{{ 99999999999999999999999999999999 | random | to_uuid | hash('md5') }}"
 
-- name: Set localLibrary
-  ansible.builtin.replace:
-    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
-    regexp: '<localLibrary>.*?</localLibrary>'
-    replace: '<localLibrary>"/home/{{ kiosk_user }}/Documents"</localLibrary>'
+- name: Konfiguriere Xibo Player cmsSettings.xml (nur wenn nicht existiert)
+  ansible.builtin.template:
+    src: cmsSettings.xml.j2
+    dest: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
+    owner: "{{ kiosk_user }}"
+    group: "{{ kiosk_user }}"
+    mode: '0644'
+    force: no
+  become: yes
+  
+#- name: Set cmsAddress
+#  ansible.builtin.replace:
+#    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
+#    regexp: '<cmsAddress>.*?</cmsAddress>'
+#    replace: '<cmsAddress>{{ xibo_cms_url }}</cmsAddress>'
+
+#- name: Set key
+#  ansible.builtin.replace:
+#    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
+#    regexp: '<key>.*?</key>'
+#    replace: '<key>{{ xibo_server_key }}</key>'
+
+#- name: Set localLibrary
+#  ansible.builtin.replace:
+#    path: "/home/{{ kiosk_user }}/snap/xibo-player/common/cmsSettings.xml"
+#    regexp: '<localLibrary>.*?</localLibrary>'
+#    replace: '<localLibrary>"/home/{{ kiosk_user }}/Documents"</localLibrary>'
 
 # -------------------------
 # Enable linger for kiosk user
