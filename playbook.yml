@@ -10,4 +10,4 @@
     - base
     - xibo-docker
     - xfce_kiosk
-    #- xibo-player
+    - xibo-player
