@@ -29,10 +29,10 @@
   failed_when: false
   changed_when: false
 
-- name: Grant PROCESS privilege
+- name: Grant PROCESS privilege (root via socket)
   shell: >
     docker exec {{ xibo_db_container }}
-    mysql -u root -prootpass
+    mysql -u root
     -e "GRANT PROCESS ON *.* TO '{{ xibo_db_user }}'@'%'; FLUSH PRIVILEGES;"
   when: process_priv.rc != 0
   changed_when: true
