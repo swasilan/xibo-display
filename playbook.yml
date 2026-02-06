@@ -86,26 +86,6 @@
     - xibo-player
 
   ###########################################################################
-  # Reboot (einmalig)
-  ###########################################################################
-  tasks:
-    - name: Prüfe ob Reboot bereits durchgeführt wurde
-      ansible.builtin.stat:
-        path: "{{ kiosk_reboot_marker }}"
-      register: reboot_done
-
-    - name: Reboot Kiosk (einmalig)
-      ansible.builtin.reboot:
-        reboot_timeout: 600
-      when: not reboot_done.stat.exists
-
-    - name: Marker-Datei nach Reboot anlegen
-      ansible.builtin.file:
-        path: "{{ kiosk_reboot_marker }}"
-        state: touch
-      when: not reboot_done.stat.exists
-
-  ###########################################################################
   # Abschluss & Cleanup
   ###########################################################################
   post_tasks:
