@@ -2,132 +2,191 @@
 # --------------------------------------------------
 # Restore-Playbook für Xibo
 # --------------------------------------------------
-# --------------------------------------------------
-# Variablen definieren
-# --------------------------------------------------
-- name: Set restore paths
-  set_fact:
-    restore_tmp_dir: /tmp/xibo_restore
-    backup_dir: /opt/xibo-backup/backups
-    cms_target_dir: /opt/xibo-docker/shared/cms
+- name: Xibo Restore
+  hosts: local
+  gather_facts: yes
+  become: yes
 
-# --------------------------------------------------
-# Verzeichnisse sicherstellen
-# --------------------------------------------------
-- name: Ensure restore temp directory exists
-  file:
-    path: "{{ restore_tmp_dir }}"
-    state: directory
-    mode: "0755"
+  ###########################################################################
+  # Interaktive Prompts (werden übersprungen, wenn Vars gesetzt sind)
+  ###########################################################################
+  vars_prompt:
 
-- name: Ensure CMS target directory exists
-  file:
-    path: "{{ cms_target_dir }}"
-    state: directory
-    mode: "0755"
+    - name: restore_confirm
+      prompt: |
+        ⚠️  Es wurden Xibo-Backups gefunden.
+        Möchtest du ein Backup wiederherstellen?
 
-- name: Ensure backup directory exists
-  file:
-    path: "{{ backup_dir }}"
-    state: directory
-    mode: "0755"
+        Tippe 'yes' zum Fortfahren
+        ENTER = überspringen
+      private: no
+      default: "{{ restore_confirm | default('') }}"
 
-# --------------------------------------------------
-# Backups finden
-# --------------------------------------------------
-- name: Find available Xibo backups
-  find:
-    paths: "{{ backup_dir }}"
-    patterns: "xibo_backup_*.zip"
-    recurse: no
-  register: found_backups
+    - name: backup_choice
+      prompt: |
+        Welches Backup soll verwendet werden?
 
-- name: Set fact if backups exist
-  set_fact:
-    backups_exist: "{{ found_backups.files | length > 0 }}"
+        👉 'latest' = neuestes Backup (empfohlen)
+        👉 1, 2, 3 … = Auswahl aus der Liste
+      private: no
+      default: "{{ backup_choice | default('latest') }}"
 
-- name: Warnung, dass keine Backups gefunden wurden
-  debug:
-    msg: "⚠️ Keine Backups gefunden in {{ backup_dir }}, Restore wird übersprungen."
-  when: not backups_exist
+    - name: restore_dry_run
+      prompt: |
+        🛡 Restore nur anzeigen (Dry-Run)?
+        Tippe 'true' für Vorschau, ENTER = normaler Restore
+      private: no
+      default: "{{ restore_dry_run | default(false) }}"
 
-# --------------------------------------------------
-# Backup nur wiederherstellen, wenn Backups existieren
-# --------------------------------------------------
-- block:
+  ###########################################################################
+  # Variablen (Defaults, werden von secrets.yml überschrieben)
+  ###########################################################################
+  vars:
+    restore_tmp_dir: "{{ restore_tmp_dir | default('/tmp/xibo_restore') }}"
+    backup_dir: "{{ backup_dir | default('/opt/xibo-backup/backups') }}"
+    cms_target_dir: "{{ cms_target_dir | default('/opt/xibo-docker/shared/cms') }}"
+    rollback_dir: "{{ rollback_dir | default('/opt/xibo-backup/rollback') }}"
+
+  vars_files:
+    - group_vars/secrets.yml
+
+  tasks:
+    ###########################################################################
+    # Vorbereitungen
+    ###########################################################################
+    - name: Ensure required directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ restore_tmp_dir }}"
+        - "{{ backup_dir }}"
+        - "{{ cms_target_dir }}"
+        - "{{ rollback_dir }}"
+
+    ###########################################################################
+    # Backups finden
+    ###########################################################################
+    - name: Find available Xibo backups
+      find:
+        paths: "{{ backup_dir }}"
+        patterns: "xibo_backup_*.zip"
+        recurse: no
+      register: found_backups
+
+    - name: Abort if no backups exist
+      fail:
+        msg: "❌ Keine Backups gefunden in {{ backup_dir }}"
+      when: found_backups.files | length == 0
+
+    ###########################################################################
+    # Backups sortieren (neu → alt)
+    ###########################################################################
+    - name: Sort backups by date
+      set_fact:
+        sorted_backups: "{{ found_backups.files | sort(attribute='mtime', reverse=true) }}"
+
     - name: Show available backups
-      ansible.builtin.debug:
+      debug:
         msg: |
           Verfügbare Backups:
-          {% for f in found_backups.files | sort(attribute='mtime', reverse=true) %}
-          - {{ loop.index }}: {{ f.path | basename }} ({{ '%Y-%m-%d %H:%M:%S' | strftime(f.mtime) }})
+          {% for f in sorted_backups %}
+          - {{ loop.index }}: {{ f.path | basename }}
           {% endfor %}
 
-    - name: Ask if restore should be executed (30 Sekunden Timeout)
-      pause:
-        prompt: |
-          ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
-          Möchtest du ein Backup wiederherstellen?
-          Tippe 'yes' zum Fortfahren (Timeout: 30 Sekunden):
-        seconds: 30
-        echo: yes
-      register: restore_confirm
+    ###########################################################################
+    # Backup auswählen
+    ###########################################################################
+    - name: Select backup automatically or by index
+      set_fact:
+        selected_backup: >-
+          {% if backup_choice == 'latest' %}
+          {{ sorted_backups[0].path }}
+          {% else %}
+          {{ sorted_backups[backup_choice | int - 1].path }}
+          {% endif %}
 
-    - name: Skip restore notification
+    - name: Validate backup selection
+      fail:
+        msg: "❌ Ungültige Backup-Auswahl."
+      when: selected_backup is not defined
+
+    - name: Confirm selected backup
       debug:
-        msg: "ℹ️ Restore übersprungen (Timeout oder Ablehnung), fahre mit Installation fort."
-      when: restore_confirm.user_input is not defined or restore_confirm.user_input != "yes"
+        msg: "✅ Gewähltes Backup: {{ selected_backup }}"
 
-    # Alle weiteren Tasks in einen Block mit when-Bedingung
-    - block:
-        - name: Ask which backup to restore
-          pause:
-            prompt: |
-              Bitte Nummer des Backups angeben (1–{{ found_backups.files | length }}):
-          register: backup_choice
+    ###########################################################################
+    # CMS-Leerprüfung (Schutz)
+    ###########################################################################
+    - name: Check if CMS directory is empty
+      find:
+        paths: "{{ cms_target_dir }}"
+        file_type: any
+      register: cms_files
 
-        - name: Validate backup selection
-          fail:
-            msg: "Ungültige Auswahl."
-          when: backup_choice.user_input | int < 1 or backup_choice.user_input | int > found_backups.files | length
+    - name: Abort if CMS not empty and not forced
+      fail:
+        msg: >
+          ❌ CMS-Verzeichnis ist nicht leer.
+          Setze restore_force=true um trotzdem fortzufahren.
+      when:
+        - cms_files.matched > 0
+        - not (restore_force | default(false))
 
-        - name: Select chosen backup
-          set_fact:
-            selected_backup: >-
-              {{ (found_backups.files | sort(attribute='mtime', reverse=true))
-                 [backup_choice.user_input | int - 1].path }}
+    ###########################################################################
+    # Dry-Run Vorschau
+    ###########################################################################
+    - name: Dry-run preview
+      debug:
+        msg: |
+          🛡 DRY-RUN
+          Backup: {{ selected_backup }}
+          Ziel: {{ cms_target_dir }}
+          DB: db.sql → xibo-db
+      when: restore_dry_run | bool
 
-        - name: Confirm selected backup
-          debug:
-            msg: "✅ Gewähltes Backup: {{ selected_backup }}"
+    - meta: end_play
+      when: restore_dry_run | bool
 
-        - name: Unarchive selected backup
-          unarchive:
-            src: "{{ selected_backup }}"
-            dest: "{{ restore_tmp_dir }}"
-            remote_src: yes
+    ###########################################################################
+    # Rollback erstellen
+    ###########################################################################
+    - name: Create rollback snapshot
+      shell: |
+        rsync -a {{ cms_target_dir }}/ {{ rollback_dir }}/cms_{{ ansible_date_time.iso8601 }}/
+      changed_when: true
 
-        - name: Restore database
-          ansible.builtin.shell: |
-            cat {{ restore_tmp_dir }}/db.sql | docker exec -i xibo-db mysql -uxibo -pxibopass xibo
-          become: yes
+    ###########################################################################
+    # Restore durchführen
+    ###########################################################################
+    - name: Unarchive selected backup
+      unarchive:
+        src: "{{ selected_backup }}"
+        dest: "{{ restore_tmp_dir }}"
+        remote_src: yes
 
-        - name: Restore CMS files
-          shell: |
-            rsync -a --delete \
-              {{ restore_tmp_dir }}/cms/ \
-              {{ cms_target_dir }}/
-          changed_when: true
+    - name: Restore database
+      shell: |
+        cat {{ restore_tmp_dir }}/db.sql | docker exec -i xibo-db \
+          mysql -uxibo -pxibopass xibo
 
-        - name: Cleanup restore temp directory
-          file:
-            path: "{{ restore_tmp_dir }}"
-            state: absent
+    - name: Restore CMS files
+      shell: |
+        rsync -a --delete \
+          {{ restore_tmp_dir }}/cms/ \
+          {{ cms_target_dir }}/
+      changed_when: true
 
-        - name: Restore finished
-          debug:
-            msg: "🎉 Restore erfolgreich abgeschlossen."
+    ###########################################################################
+    # Cleanup
+    ###########################################################################
+    - name: Cleanup restore temp directory
+      file:
+        path: "{{ restore_tmp_dir }}"
+        state: absent
 
-      when: restore_confirm.user_input is defined and restore_confirm.user_input == "yes"
-
-  when: backups_exist
+    - name: Restore finished
+      debug:
+        msg: "🎉 Xibo Restore erfolgreich abgeschlossen."
+t
