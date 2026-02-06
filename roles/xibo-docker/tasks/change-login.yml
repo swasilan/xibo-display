@@ -33,10 +33,10 @@
     var: login_page.content
   when: admin_exists.stdout|int == 0
 
-- name: 2️⃣ CSRF-Token aus HTML extrahieren
+- name: 2️⃣ CSRF-Token aus HTML extrahieren (safe)
   ansible.builtin.set_fact:
     csrf_token: >-
-      {{ (login_page.content | regex_search('name="csrfToken" value="([^"]+)"', '\\1')) | default('') }}
+      {{ (login_page.content | regex_search('name="csrfToken" value="([^"]+)"')) | default('') }}
 
 - name: Fail if CSRF token was not found
   ansible.builtin.fail:
