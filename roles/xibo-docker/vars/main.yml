@@ -24,3 +24,6 @@ xibo_xmr_mem: 256m
 xibo_memcached_container: xibo-memcached
 xibo_memcached_mem: 128m
 xibo_memcached_size: 64
+
+xibo_loginname_default: xibo_admin
+xibo_loginpassword_default: password
