@@ -53,8 +53,8 @@
       Cookie: "{{ login_page.cookies_string }}"
     body_format: form-urlencoded
     body:
-      username: "{{ xibo_username }}"
-      password: "{{ xibo_password }}"
+      username: "{{ xibo_loginname_default }}"
+      password: "{{ xibo_loginpassword_default }}"
       priorRoute: "/"
       csrfToken: "{{ csrf_token }}"
     status_code:
