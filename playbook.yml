@@ -7,6 +7,22 @@
   gather_facts: yes
   become: yes
 
+  ###########################################################################
+  # Interaktive Abfrage (zuverlässig, vor become)
+  ###########################################################################
+  vars_prompt:
+    - name: auto_continue_confirm
+      prompt: |
+        ⚙️  Auto-Continue nach Reboots aktivieren?
+
+        Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,
+        bis die Installation vollständig abgeschlossen ist.
+
+        👉 Tippe 'yes' zum Aktivieren
+        👉 ENTER = manuell
+      private: no
+      default: ""
+
   vars:
     local_user: "{{ lookup('env','USER') }}"
     kiosk_reboot_marker: /var/run/kiosk_reboot_done
@@ -15,26 +31,6 @@
     - group_vars/secrets.yml
 
   pre_tasks:
-    ###########################################################################
-    # Interaktive Abfrage mit Timeout (Default = manuell)
-    ###########################################################################
-    - name: Frage nach automatischem Fortsetzen nach Reboots (30s Timeout)
-      ansible.builtin.pause:
-        prompt: |
-          ⚙️  Auto-Continue nach Reboots aktivieren?
-
-          Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,
-          bis die Installation vollständig abgeschlossen ist.
-
-          👉 Tippe **yes** innerhalb von 30 Sekunden zum Aktivieren.
-          👉 ENTER, Timeout oder andere Eingabe = manuell
-        seconds: 30
-      register: auto_continue_prompt
-
-    - name: Setze auto_continue_confirm Flag
-      ansible.builtin.set_fact:
-        auto_continue_confirm: "{{ auto_continue_prompt.user_input | default('') }}"
-
     ###########################################################################
     # Systemd Service erstellen (immer)
     ###########################################################################
