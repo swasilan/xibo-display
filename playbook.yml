@@ -1,122 +1,114 @@
 ################################################################################
 # Xibo Digital Signage - Standalone Installation
 ################################################################################
-# 
-# Dieses Playbook richtet eine vollständige Xibo Digital Signage Lösung auf
-# einer einzelnen Maschine ein:
-#
-#   - Xibo CMS (Docker-basiert)
-#   - Xibo Player (Snap-basiert)
-#   - XFCE Kiosk-Modus für automatischen Player-Start
-#   - Automatische Konfiguration und Verbindung zwischen CMS und Player
-#
-# Die Installation erfolgt vollautomatisch inklusive Reboots und setzt nach
-# jedem Neustart automatisch fort bis das Setup vollständig abgeschlossen ist.
-#
-# Voraussetzungen:
-#   - Ubuntu Server 24.04 LTS
-#   - Mindestens 4GB RAM, 20GB Festplatte
-#   - Internetzugang
-#
-# Verwendung:
-#   sudo ansible-playbook -i hosts playbook.yml
-#
-################################################################################
+
 - name: Lokale Basiskonfiguration
   hosts: local
   gather_facts: yes
   become: yes
+
   vars:
     local_user: "{{ lookup('env','USER') }}"
     kiosk_reboot_marker: /var/run/kiosk_reboot_done
+
   vars_files:
-    - group_vars/secrets.yml  # enthält Xibo DB/Player Passwörter etc.
+    - group_vars/secrets.yml
+
   pre_tasks:
     ###########################################################################
-    # Frage User ob automatisches Fortsetzen gewünscht ist (30s Timeout)
+    # Interaktive Abfrage mit Timeout (Default = manuell)
     ###########################################################################
-    - name: Frage nach automatischem Fortsetzen nach Reboots (mit Timeout)
-      shell: |
-        echo ""
-        echo "⚙️  Auto-Continue nach Reboots aktivieren?"
-        echo ""
-        echo "Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,"
-        echo "bis die Installation vollständig abgeschlossen ist."
-        echo ""
-        echo -n "Tippe 'yes' zum Aktivieren (Timeout: 30 Sekunden): "
-        read -t 30 response || response=""
-        echo "$response"
-      register: auto_continue_shell
-      changed_when: false
-      when: ansible_connection == 'local'
+    - name: Frage nach automatischem Fortsetzen nach Reboots (30s Timeout)
+      ansible.builtin.pause:
+        prompt: |
+          ⚙️  Auto-Continue nach Reboots aktivieren?
 
-    - name: Setze auto_continue_confirm Variable
-      set_fact:
-        auto_continue_confirm:
-          user_input: "{{ auto_continue_shell.stdout | default('') }}"
-      when: ansible_connection == 'local'
+          Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,
+          bis die Installation vollständig abgeschlossen ist.
+
+          👉 Tippe **yes** innerhalb von 30 Sekunden zum Aktivieren.
+          👉 ENTER, Timeout oder andere Eingabe = manuell
+        seconds: 30
+      register: auto_continue_prompt
+
+    - name: Setze auto_continue_confirm Flag
+      ansible.builtin.set_fact:
+        auto_continue_confirm: "{{ auto_continue_prompt.user_input | default('') }}"
 
     ###########################################################################
-    # Systemd Service erstellen, um Playbook nach Reboot automatisch fortzusetzen
+    # Systemd Service erstellen (immer)
     ###########################################################################
-    - name: Erstelle Ansible auto-continue Service (als Root)
+    - name: Erstelle Ansible auto-continue Service
       ansible.builtin.copy:
         dest: /etc/systemd/system/ansible-continue.service
+        mode: '0644'
         content: |
           [Unit]
           Description=Continue Ansible Playbook after reboot
           After=network-online.target
           Wants=network-online.target
+
           [Service]
           Type=oneshot
           User=root
           WorkingDirectory={{ playbook_dir }}
           ExecStart=/usr/bin/ansible-playbook -i hosts playbook.yml
           RemainAfterExit=yes
+
           [Install]
           WantedBy=multi-user.target
-        mode: '0644'
 
+    ###########################################################################
+    # Auto-Continue nur bei exakt "yes"
+    ###########################################################################
     - name: Enable Ansible auto-continue Service
       ansible.builtin.systemd:
         name: ansible-continue
         enabled: yes
         daemon_reload: yes
-      when: auto_continue_confirm.user_input is defined and auto_continue_confirm.user_input == "yes"
+      when: auto_continue_confirm == "yes"
 
-    - name: Info wenn auto-continue nicht aktiviert
+    - name: Info wenn auto-continue NICHT aktiviert
       ansible.builtin.debug:
-        msg: "ℹ️ Auto-Continue Service erstellt aber nicht aktiviert. Nach jedem Reboot manuell 'sudo ansible-playbook -i hosts playbook.yml' ausführen."
-      when: auto_continue_confirm.user_input is not defined or auto_continue_confirm.user_input != "yes"
+        msg: >
+          ℹ️ Auto-Continue deaktiviert.
+          Nach jedem Reboot bitte manuell ausführen:
+          sudo ansible-playbook -i hosts playbook.yml
+      when: auto_continue_confirm != "yes"
 
+  ###########################################################################
+  # Rollen
+  ###########################################################################
   roles:
     - base
     - xibo-docker
     - xfce_kiosk
     - xibo-player
+
   ###########################################################################
-  # OPTIONAL: Reboot-Mechanismus
+  # Reboot (einmalig)
   ###########################################################################
   tasks:
     - name: Prüfe ob Reboot bereits durchgeführt wurde
       ansible.builtin.stat:
         path: "{{ kiosk_reboot_marker }}"
       register: reboot_done
+
     - name: Reboot Kiosk (einmalig)
       ansible.builtin.reboot:
         reboot_timeout: 600
       when: not reboot_done.stat.exists
-      become: yes
+
     - name: Marker-Datei nach Reboot anlegen
       ansible.builtin.file:
         path: "{{ kiosk_reboot_marker }}"
         state: touch
       when: not reboot_done.stat.exists
-      become: yes
+
+  ###########################################################################
+  # Abschluss & Cleanup
+  ###########################################################################
   post_tasks:
-    ###########################################################################
-    # Marker-Dateien für abgeschlossene Setups prüfen
-    ###########################################################################
     - name: Prüfe ob alle Setups abgeschlossen sind
       ansible.builtin.stat:
         path: "{{ item }}"
@@ -124,12 +116,14 @@
       loop:
         - /etc/xfce-kiosk-setup-completed
         - /etc/xibo-player-setup-completed
+
     - name: Deaktiviere auto-continue Service (Setup komplett)
       ansible.builtin.systemd:
         name: ansible-continue
         enabled: no
         state: stopped
       when: setup_markers.results | selectattr('stat.exists') | list | length == 2
+
     - name: Setup abgeschlossen
       ansible.builtin.debug:
         msg: "🎉 Komplettes Xibo Display Setup erfolgreich abgeschlossen!"
