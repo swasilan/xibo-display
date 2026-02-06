@@ -28,6 +28,11 @@
   register: login_page
   when: admin_exists.stdout|int == 0
 
+- name: Debug login page content
+  ansible.builtin.debug:
+    var: login_page.content
+  when: admin_exists.stdout|int == 0
+
 - name: 2️⃣ CSRF-Token aus HTML extrahieren
   ansible.builtin.set_fact:
     csrf_token: >-
