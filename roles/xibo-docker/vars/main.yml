@@ -25,6 +25,6 @@ xibo_memcached_container: xibo-memcached
 xibo_memcached_mem: 128m
 xibo_memcached_size: 64
 
-xibo_url: "https://localhost:8080"
+xibo_url: "http://localhost:8080"
 xibo_loginname_default: xibo_admin
 xibo_loginpassword_default: password
