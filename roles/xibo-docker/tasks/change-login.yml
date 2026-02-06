@@ -2,9 +2,9 @@
   hosts: localhost
   gather_facts: no
   vars:
-    xibo_url: "https://DEIN-XIBO-SERVER"
-    xibo_username: "DEIN_BENUTZERNAME"
-    xibo_password: "DEIN_PASSWORT"
+    xibo_url: "https://localhost:8080"
+    xibo_username: "{{ xibo_loginname_default }}"
+    xibo_password: "{{ xibo_loginpassword_default }}"
 
   tasks:
     - name: 1️⃣ Login-Seite abrufen (Session + CSRF-Token)
