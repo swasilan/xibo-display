@@ -21,14 +21,11 @@
 # 1️⃣ Login-Seite laden (Session + CSRF)
 ############################################
 - name: GET login page
-  uri:
+  ansible.builtin.uri:
     url: "{{ xibo_url }}/login"
     method: GET
     return_content: yes
     use_cookies: yes
-    validate_certs: false
-  when: do_initial_login
-  register: login_page
 
 ############################################
 # 2️⃣ CSRF Token extrahieren (safe)
@@ -50,7 +47,7 @@
 # 3️⃣ Login durchführen (gleiche Session!)
 ############################################
 - name: POST login
-  uri:
+  ansible.builtin.uri:
     url: "{{ xibo_url }}/login"
     method: POST
     body_format: form-urlencoded
@@ -62,7 +59,6 @@
     follow_redirects: no
     use_cookies: yes
     status_code: [200, 302]
-    validate_certs: false
   when: do_initial_login
   register: login_result
 
