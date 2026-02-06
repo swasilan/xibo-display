@@ -26,6 +26,9 @@
     method: GET
     return_content: yes
     use_cookies: yes
+    validate_certs: false
+  when: do_initial_login
+  register: login_page
 
 ############################################
 # 2️⃣ CSRF Token extrahieren (safe)
@@ -59,6 +62,7 @@
     follow_redirects: no
     use_cookies: yes
     status_code: [200, 302]
+    validate_certs: false
   when: do_initial_login
   register: login_result
 
