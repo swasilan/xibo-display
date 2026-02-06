@@ -1,5 +1,6 @@
 ---
 - import_tasks: install.yml       # CMS Installation
+- import_tasks: change-login.yml  # Defaults setzen
 - import_tasks: restore.yml       # Restore falls DB leer
 - import_tasks: backup.yml        # Backup via Ansible (optional, initial run)
 - import_tasks: cron.yml          # Täglicher Cronjob
