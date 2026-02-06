@@ -106,11 +106,19 @@
         var: vbox_modules.stdout
 
     # 4️⃣ Reboot (nur, wenn Module vorher nicht geladen waren)
-    - name: Reboot System (localhost) falls nötig
-      ansible.builtin.reboot:
-        reboot_timeout: 300
-        msg: "Reboot nach Installation von VirtualBox Guest Additions"
+    - name: Reboot VBox (einmalig nach Setup, wenn Module vorher nicht geladen waren)
+      ansible.builtin.shell: "sleep 2 && shutdown -r now 'Initial XFCE Setup Reboot'"
       become: yes
+      async: 1
+      poll: 0
+      ignore_errors: true
+      when: vboxvideo_check.rc != 0
+
+    - name: Manuelle Pause für Reboot
+      ansible.builtin.pause:
+        prompt: |
+          ⚠️ XFCE Setup abgeschlossen. System wird jetzt neu gestartet.
+          Bitte warte bis System neu gestartet ist, dann drücke ENTER um mit weiteren Tasks fortzufahren.
       when: vboxvideo_check.rc != 0
 
   when:
