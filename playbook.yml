@@ -35,20 +35,25 @@
     ###########################################################################
     # Frage User ob automatisches Fortsetzen gewünscht ist (30s Timeout)
     ###########################################################################
-    - name: Frage nach automatischem Fortsetzen nach Reboots
-      pause:
-        prompt: |
-          
-          ⚙️  Auto-Continue nach Reboots aktivieren?
-          
-          Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,
-          bis die Installation vollständig abgeschlossen ist.
-          
-          Tippe 'yes' zum Aktivieren oder drücke Enter zum Überspringen
-          (Auto-Timeout in 30 Sekunden):
-        seconds: 30
-        echo: yes
-      register: auto_continue_confirm
+    - name: Frage nach automatischem Fortsetzen nach Reboots (mit Timeout)
+      shell: |
+        echo ""
+        echo "⚙️  Auto-Continue nach Reboots aktivieren?"
+        echo ""
+        echo "Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,"
+        echo "bis die Installation vollständig abgeschlossen ist."
+        echo ""
+        echo -n "Tippe 'yes' zum Aktivieren (Timeout: 30 Sekunden): "
+        read -t 30 response || response=""
+        echo "$response"
+      register: auto_continue_shell
+      changed_when: false
+      when: ansible_connection == 'local'
+
+    - name: Setze auto_continue_confirm Variable
+      set_fact:
+        auto_continue_confirm:
+          user_input: "{{ auto_continue_shell.stdout | default('') }}"
       when: ansible_connection == 'local'
 
     ###########################################################################
