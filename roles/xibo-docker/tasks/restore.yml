@@ -189,4 +189,3 @@
     - name: Restore finished
       debug:
         msg: "🎉 Xibo Restore erfolgreich abgeschlossen."
-t
