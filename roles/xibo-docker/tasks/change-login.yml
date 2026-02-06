@@ -31,14 +31,12 @@
 - name: 2️⃣ CSRF-Token aus HTML extrahieren
   ansible.builtin.set_fact:
     csrf_token: >-
-      {{ login_page.content
-         | regex_search('name="csrfToken" value="([^"]+)"', '\\1') }}
-  when: admin_exists.stdout|int == 0
+      {{ (login_page.content | regex_search('name="csrfToken" value="([^"]+)"', '\\1')) | default('') }}
 
 - name: Fail if CSRF token was not found
   ansible.builtin.fail:
-    msg: "CSRF token konnte nicht extrahiert werden"
-  when: (csrf_token is not defined or csrf_token == "") and admin_exists.stdout|int == 0
+    msg: "CSRF token konnte nicht extrahiert werden! HTML-Inhalt prüfen."
+  when: csrf_token == ''
 
 - name: 3️⃣ Login durchführen
   ansible.builtin.uri:
