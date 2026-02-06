@@ -44,7 +44,8 @@
           Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,
           bis die Installation vollständig abgeschlossen ist.
           
-          Tippe 'yes' zum Aktivieren (Timeout: 30 Sekunden, Standard: Nein):
+          Tippe 'yes' zum Aktivieren oder drücke Enter zum Überspringen
+          (Auto-Timeout in 30 Sekunden):
         seconds: 30
         echo: yes
       register: auto_continue_confirm
