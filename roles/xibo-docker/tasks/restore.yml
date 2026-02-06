@@ -63,18 +63,20 @@
           - {{ loop.index }}: {{ f.path | basename }} ({{ '%Y-%m-%d %H:%M:%S' | strftime(f.mtime) }})
           {% endfor %}
 
-    - name: Ask if restore should be executed
+    - name: Ask if restore should be executed (30 Sekunden Timeout)
       pause:
         prompt: |
           ⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden.
           Möchtest du ein Backup wiederherstellen?
-          Tippe 'yes' zum Fortfahren:
+          Tippe 'yes' zum Fortfahren (Timeout: 30 Sekunden):
+        seconds: 30
+        echo: yes
       register: restore_confirm
 
     - name: Skip restore notification
       debug:
-        msg: "ℹ️ Restore übersprungen, fahre mit Installation fort."
-      when: restore_confirm.user_input != "yes"
+        msg: "ℹ️ Restore übersprungen (Timeout oder Ablehnung), fahre mit Installation fort."
+      when: restore_confirm.user_input is not defined or restore_confirm.user_input != "yes"
 
     # Alle weiteren Tasks in einen Block mit when-Bedingung
     - block:
@@ -126,6 +128,6 @@
           debug:
             msg: "🎉 Restore erfolgreich abgeschlossen."
 
-      when: restore_confirm.user_input == "yes"
+      when: restore_confirm.user_input is defined and restore_confirm.user_input == "yes"
 
   when: backups_exist
