@@ -7,6 +7,21 @@
     xibo_password: "{{ xibo_loginpassword_default }}"
 
   tasks:
+    ############################################
+    # Admin User prüfen
+    ############################################
+    - name: Check if admin user exists
+      shell: >
+        docker exec {{ xibo_db_container }}
+        mysql -N -s
+        -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+        -e "SELECT COUNT(*) FROM user WHERE userName='{{ xibo_admin_new }}';"
+      register: admin_exists
+      changed_when: false
+
+    ############################################
+    # Nur Login durchführen, wenn Admin noch nicht geändert
+    ############################################
     - name: 1️⃣ Login-Seite abrufen (Session + CSRF-Token)
       ansible.builtin.uri:
         url: "{{ xibo_url }}/login"
@@ -14,17 +29,19 @@
         return_content: yes
         validate_certs: yes
       register: login_page
+      when: admin_exists.stdout|int == 0
 
     - name: 2️⃣ CSRF-Token aus HTML extrahieren
       ansible.builtin.set_fact:
         csrf_token: >-
           {{ login_page.content
              | regex_search('name="csrfToken" value="([^"]+)"', '\\1') }}
+      when: admin_exists.stdout|int == 0
 
     - name: Fail if CSRF token was not found
       ansible.builtin.fail:
         msg: "CSRF token konnte nicht extrahiert werden"
-      when: csrf_token is not defined or csrf_token == ""
+      when: (csrf_token is not defined or csrf_token == "") and admin_exists.stdout|int == 0
 
     - name: 3️⃣ Login durchführen
       ansible.builtin.uri:
@@ -44,13 +61,14 @@
           - 200
           - 302
       register: login_result
+      when: admin_exists.stdout|int == 0
 
     - name: 4️⃣ Prüfen, ob Login erfolgreich war
       ansible.builtin.debug:
         msg: "✅ Login erfolgreich!"
-      when: login_result.status == 200 or login_result.status == 302
+      when: (login_result.status == 200 or login_result.status == 302) and admin_exists.stdout|int == 0
 
-    - name: 4️⃣ Login fehlgeschlagen
-      ansible.builtin.fail:
-        msg: "❌ Login fehlgeschlagen!"
-      when: login_result.status != 200 and login_result.status != 302
+    - name: 4️⃣ Login überspringen, Admin schon geändert
+      ansible.builtin.debug:
+        msg: "⚠️ Login übersprungen, Admin-Passwort wurde bereits geändert"
+      when: admin_exists.stdout|int != 0
