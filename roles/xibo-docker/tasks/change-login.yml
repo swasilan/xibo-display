@@ -1,74 +1,71 @@
-- name: Xibo Login Check
-  hosts: localhost
-  gather_facts: no
-  vars:
-    xibo_url: "https://localhost:8080"
-    xibo_username: "{{ xibo_loginname_default }}"
-    xibo_password: "{{ xibo_loginpassword_default }}"
+---
+############################################
+# Xibo Login Check
+############################################
+# Diese Tasks prüfen und ändern das Admin-Login
 
-  tasks:
-    ############################################
-    # Admin User prüfen
-    ############################################
-    - name: Check if admin user exists
-      shell: >
-        docker exec {{ xibo_db_container }}
-        mysql -N -s
-        -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-        -e "SELECT COUNT(*) FROM user WHERE userName='{{ xibo_admin_new }}';"
-      register: admin_exists
-      changed_when: false
+############################################
+# Admin User prüfen
+############################################
+- name: Check if admin user exists
+  shell: >
+    docker exec {{ xibo_db_container }}
+    mysql -N -s
+    -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+    -e "SELECT COUNT(*) FROM user WHERE userName='{{ xibo_admin_new }}';"
+  register: admin_exists
+  changed_when: false
 
-    ############################################
-    # Nur Login durchführen, wenn Admin noch nicht geändert
-    ############################################
-    - name: 1️⃣ Login-Seite abrufen (Session + CSRF-Token)
-      ansible.builtin.uri:
-        url: "{{ xibo_url }}/login"
-        method: GET
-        return_content: yes
-        validate_certs: yes
-      register: login_page
-      when: admin_exists.stdout|int == 0
+############################################
+# Nur Login durchführen, wenn Admin noch nicht geändert
+############################################
+- name: 1️⃣ Login-Seite abrufen (Session + CSRF-Token)
+  ansible.builtin.uri:
+    url: "{{ xibo_url }}/login"
+    method: GET
+    return_content: yes
+    validate_certs: yes
+  register: login_page
+  when: admin_exists.stdout|int == 0
 
-    - name: 2️⃣ CSRF-Token aus HTML extrahieren
-      ansible.builtin.set_fact:
-        csrf_token: >-
-          {{ login_page.content
-             | regex_search('name="csrfToken" value="([^"]+)"', '\\1') }}
-      when: admin_exists.stdout|int == 0
+- name: 2️⃣ CSRF-Token aus HTML extrahieren
+  ansible.builtin.set_fact:
+    csrf_token: >-
+      {{ login_page.content
+         | regex_search('name="csrfToken" value="([^"]+)"', '\\1') }}
+  when: admin_exists.stdout|int == 0
 
-    - name: Fail if CSRF token was not found
-      ansible.builtin.fail:
-        msg: "CSRF token konnte nicht extrahiert werden"
-      when: (csrf_token is not defined or csrf_token == "") and admin_exists.stdout|int == 0
+- name: Fail if CSRF token was not found
+  ansible.builtin.fail:
+    msg: "CSRF token konnte nicht extrahiert werden"
+  when: (csrf_token is not defined or csrf_token == "") and admin_exists.stdout|int == 0
 
-    - name: 3️⃣ Login durchführen
-      ansible.builtin.uri:
-        url: "{{ xibo_url }}/login"
-        method: POST
-        follow_redirects: all
-        headers:
-          Content-Type: "application/x-www-form-urlencoded"
-          Cookie: "{{ login_page.cookies_string }}"
-        body_format: form-urlencoded
-        body:
-          username: "{{ xibo_username }}"
-          password: "{{ xibo_password }}"
-          priorRoute: "/"
-          csrfToken: "{{ csrf_token }}"
-        status_code:
-          - 200
-          - 302
-      register: login_result
-      when: admin_exists.stdout|int == 0
+- name: 3️⃣ Login durchführen
+  ansible.builtin.uri:
+    url: "{{ xibo_url }}/login"
+    method: POST
+    follow_redirects: all
+    headers:
+      Content-Type: "application/x-www-form-urlencoded"
+      Cookie: "{{ login_page.cookies_string }}"
+    body_format: form-urlencoded
+    body:
+      username: "{{ xibo_username }}"
+      password: "{{ xibo_password }}"
+      priorRoute: "/"
+      csrfToken: "{{ csrf_token }}"
+    status_code:
+      - 200
+      - 302
+  register: login_result
+  when: admin_exists.stdout|int == 0
 
-    - name: 4️⃣ Prüfen, ob Login erfolgreich war
-      ansible.builtin.debug:
-        msg: "✅ Login erfolgreich!"
-      when: (login_result.status == 200 or login_result.status == 302) and admin_exists.stdout|int == 0
+- name: 4️⃣ Prüfen, ob Login erfolgreich war
+  ansible.builtin.debug:
+    msg: "✅ Login erfolgreich!"
+  when: (login_result.status == 200 or login_result.status == 302) and admin_exists.stdout|int == 0
 
-    - name: 4️⃣ Login überspringen, Admin schon geändert
-      ansible.builtin.debug:
-        msg: "⚠️ Login übersprungen, Admin-Passwort wurde bereits geändert"
-      when: admin_exists.stdout|int != 0
+- name: 4️⃣ Login überspringen, Admin schon geändert
+  ansible.builtin.debug:
+    msg: "⚠️ Login übersprungen, Admin-Passwort wurde bereits geändert"
+  when: admin_exists.stdout|int != 0
