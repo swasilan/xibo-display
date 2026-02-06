@@ -1,11 +1,5 @@
----
 ############################################
-# Xibo Login Check
-############################################
-# Diese Tasks prüfen und ändern das Admin-Login
-
-############################################
-# Admin User prüfen
+# Admin User prüfen (DB)
 ############################################
 - name: Check if admin user exists
   shell: >
@@ -17,58 +11,82 @@
   changed_when: false
 
 ############################################
-# Nur Login durchführen, wenn Admin noch nicht geändert
+# Login nur wenn Admin noch nicht geändert
 ############################################
-- name: 1️⃣ Login-Seite abrufen (Session + CSRF-Token)
-  ansible.builtin.uri:
+- name: Set flag if initial login is required
+  set_fact:
+    do_initial_login: "{{ admin_exists.stdout | int == 0 }}"
+
+############################################
+# 1️⃣ Login-Seite laden (Session + CSRF)
+############################################
+- name: GET login page
+  uri:
     url: "{{ xibo_url }}/login"
     method: GET
     return_content: yes
-    validate_certs: yes
+    use_cookies: yes
+    validate_certs: false
+  when: do_initial_login
   register: login_page
-  when: admin_exists.stdout|int == 0
 
-- name: Debug login page content
-  ansible.builtin.debug:
-    var: login_page.content
-  when: admin_exists.stdout|int == 0
-
-- name: 2️⃣ CSRF-Token aus HTML extrahieren (safe)
-  ansible.builtin.set_fact:
+############################################
+# 2️⃣ CSRF Token extrahieren (safe)
+############################################
+- name: Extract CSRF token
+  set_fact:
     csrf_token: >-
-      {{ (login_page.content | regex_search('name="csrfToken" value="([^"]+)"')) | default('') }}
+      {{ login_page.content
+         | regex_search('name="csrfToken" value="([^"]+)"', '\\1')
+         | default('', true) }}
+  when: do_initial_login
 
-- name: Fail if CSRF token was not found
-  ansible.builtin.fail:
-    msg: "CSRF token konnte nicht extrahiert werden! HTML-Inhalt prüfen."
-  when: csrf_token == ''
+- name: Fail if CSRF token not found
+  fail:
+    msg: "CSRF token could not be extracted from login page"
+  when: do_initial_login and csrf_token == ""
 
-- name: 3️⃣ Login durchführen
-  ansible.builtin.uri:
+############################################
+# 3️⃣ Login durchführen (gleiche Session!)
+############################################
+- name: POST login
+  uri:
     url: "{{ xibo_url }}/login"
     method: POST
-    follow_redirects: all
-    headers:
-      Content-Type: "application/x-www-form-urlencoded"
-      Cookie: "{{ login_page.cookies_string }}"
     body_format: form-urlencoded
     body:
-      username: "{{ xibo_loginname_default }}"
-      password: "{{ xibo_loginpassword_default }}"
-      priorRoute: "/"
+      username: "{{ xibo_username }}"
+      password: "{{ xibo_password }}"
       csrfToken: "{{ csrf_token }}"
-    status_code:
-      - 200
-      - 302
+      priorRoute: "/"
+    follow_redirects: no
+    use_cookies: yes
+    status_code: [200, 302]
+    validate_certs: false
+  when: do_initial_login
   register: login_result
-  when: admin_exists.stdout|int == 0
 
-- name: 4️⃣ Prüfen, ob Login erfolgreich war
-  ansible.builtin.debug:
-    msg: "✅ Login erfolgreich!"
-  when: (login_result.status == 200 or login_result.status == 302) and admin_exists.stdout|int == 0
+############################################
+# 4️⃣ Login-Erfolg bewerten
+############################################
+- name: Set login success flag
+  set_fact:
+    login_success: >-
+      {{ login_result.status == 302
+         or ('set-cookie' in (login_result.headers | lower)) }}
+  when: do_initial_login
 
-- name: 4️⃣ Login überspringen, Admin schon geändert
-  ansible.builtin.debug:
-    msg: "⚠️ Login übersprungen, Admin-Passwort wurde bereits geändert"
-  when: admin_exists.stdout|int != 0
+- name: Fail if login was not successful
+  fail:
+    msg: "Xibo login failed (no redirect and no session cookie)"
+  when: do_initial_login and not login_success
+
+############################################
+# Info
+############################################
+- name: Login skipped or successful
+  debug:
+    msg: >-
+      {{ 'Initial login skipped (admin already changed)'
+         if not do_initial_login
+         else 'Initial login successful' }}
