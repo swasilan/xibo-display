@@ -70,7 +70,7 @@ check_docker() {
 
 # Prüfe ob Xibo Container laufen
 check_xibo_containers() {
-    if ! docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+    if ! docker ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -q "^${DB_CONTAINER}$"; then
         log_error "Xibo Datenbank Container '${DB_CONTAINER}' läuft nicht!"
         log_info "Bitte starte die Xibo Container zuerst."
         exit 1
