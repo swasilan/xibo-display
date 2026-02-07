@@ -1,7 +1,8 @@
 ---
 # --------------------------------------------------
-# Restore-Tasks für Xibo
+# Restore-Script Generator für Xibo
 # --------------------------------------------------
+# Generiert ein interaktives Restore-Skript statt direktem Restore während Installation
 
 ###########################################################################
 # Variablen definieren
@@ -12,6 +13,10 @@
     backup_dir: "{{ backup_dir | default('/opt/xibo-backup/backups') }}"
     cms_target_dir: "{{ cms_target_dir | default('/opt/xibo-docker/shared/cms') }}"
     rollback_dir: "{{ rollback_dir | default('/opt/xibo-backup/rollback') }}"
+    xibo_db_container: "{{ xibo_db_container | default('xibo-db') }}"
+    xibo_db_name: "{{ xibo_db_name | default('xibo') }}"
+    xibo_db_user: "{{ xibo_db_user | default('xibo') }}"
+    xibo_db_password: "{{ xibo_db_password | default('xibopass') }}"
 
 ###########################################################################
 # Vorbereitungen
@@ -22,118 +27,27 @@
     state: directory
     mode: "0755"
   loop:
-    - "{{ restore_tmp_dir }}"
     - "{{ backup_dir }}"
     - "{{ cms_target_dir }}"
     - "{{ rollback_dir }}"
 
 ###########################################################################
-# Backups finden
+# Generiere Restore-Skript
 ###########################################################################
-- name: Find available Xibo backups
-  find:
-    paths: "{{ backup_dir }}"
-    patterns: "xibo_backup_*.zip"
-    recurse: no
-  register: found_backups
+- name: Generate interactive restore script from template
+  template:
+    src: restore-xibo-backup.sh.j2
+    dest: "{{ backup_dir }}/restore-xibo-backup.sh"
+    mode: "0755"
+    owner: root
+    group: root
 
-- name: Set fact if backups exist
-  set_fact:
-    backups_exist: "{{ found_backups.files | length > 0 }}"
-
-- name: Warnung, dass keine Backups gefunden wurden
+- name: Info about restore script
   debug:
-    msg: "⚠️ Keine Backups gefunden in {{ backup_dir }}, Restore wird übersprungen."
-  when: not backups_exist
-
-###########################################################################
-# Backup nur wiederherstellen, wenn Backups existieren
-###########################################################################
-- block:
-    - name: Show available backups
-      ansible.builtin.debug:
-        msg: |
-          Verfügbare Backups:
-          {% for f in found_backups.files | sort(attribute='mtime', reverse=true) %}
-          - {{ loop.index }}: {{ f.path | basename }} ({{ '%Y-%m-%d %H:%M:%S' | strftime(f.mtime) }})
-          {% endfor %}
-
-    - name: Ask if restore should be executed (30 Sekunden Timeout)
-      shell: |
-        echo ""
-        echo "⚠️  Es wurden {{ found_backups.files | length }} Backup(s) gefunden."
-        echo "Möchtest du ein Backup wiederherstellen?"
-        echo ""
-        echo -n "Tippe 'yes' zum Fortfahren (Timeout: 30 Sekunden): "
-        read -t 30 response || response=""
-        echo "$response"
-      register: restore_confirm_shell
-      changed_when: false
-
-    - name: Setze restore_confirm Variable
-      set_fact:
-        restore_confirm:
-          user_input: "{{ restore_confirm_shell.stdout | default('') }}"
-
-    - name: Skip restore notification
-      debug:
-        msg: "ℹ️ Restore übersprungen (Timeout oder Ablehnung), fahre mit Installation fort."
-      when: restore_confirm.user_input is not defined or restore_confirm.user_input != "yes"
-
-    ###########################################################################
-    # Restore durchführen
-    ###########################################################################
-    - block:
-        - name: Sort backups by date
-          set_fact:
-            sorted_backups: "{{ found_backups.files | sort(attribute='mtime', reverse=true) }}"
-
-        - name: Ask which backup to restore
-          pause:
-            prompt: |
-              Bitte Nummer des Backups angeben (1–{{ found_backups.files | length }}):
-          register: backup_choice
-
-        - name: Validate backup selection
-          fail:
-            msg: "Ungültige Auswahl."
-          when: backup_choice.user_input | int < 1 or backup_choice.user_input | int > found_backups.files | length
-
-        - name: Select chosen backup
-          set_fact:
-            selected_backup: "{{ sorted_backups[backup_choice.user_input | int - 1].path }}"
-
-        - name: Confirm selected backup
-          debug:
-            msg: "✅ Gewähltes Backup: {{ selected_backup }}"
-
-        - name: Unarchive selected backup
-          unarchive:
-            src: "{{ selected_backup }}"
-            dest: "{{ restore_tmp_dir }}"
-            remote_src: yes
-
-        - name: Restore database
-          ansible.builtin.shell: |
-            cat {{ restore_tmp_dir }}/db.sql | docker exec -i xibo-db mysql -uxibo -pxibopass xibo
-          become: yes
-
-        - name: Restore CMS files
-          shell: |
-            rsync -a --delete \
-              {{ restore_tmp_dir }}/cms/ \
-              {{ cms_target_dir }}/
-          changed_when: true
-
-        - name: Cleanup restore temp directory
-          file:
-            path: "{{ restore_tmp_dir }}"
-            state: absent
-
-        - name: Restore finished
-          debug:
-            msg: "🎉 Restore erfolgreich abgeschlossen."
-
-      when: restore_confirm.user_input is defined and restore_confirm.user_input == "yes"
-
-  when: backups_exist
+    msg: |
+      ✅ Restore-Skript wurde erstellt: {{ backup_dir }}/restore-xibo-backup.sh
+      
+      📋 Verwendung:
+         sudo {{ backup_dir }}/restore-xibo-backup.sh
+      
+      Das Skript zeigt alle verfügbaren Backups und führt dich durch den Restore-Prozess.
