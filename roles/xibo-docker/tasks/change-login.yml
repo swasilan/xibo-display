@@ -53,8 +53,8 @@
     headers:
       Cookie: "{{ login_page.set_cookie }}"
     body:
-      username: "{{ xibo_username }}"
-      password: "{{ xibo_password }}"
+      username: "{{ xibo_initial_username }}"
+      password: "{{ xibo_initial_password }}"
       csrfToken: "{{ csrf_token }}"
       priorRoute: "/"
     follow_redirects: all
