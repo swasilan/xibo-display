@@ -1,82 +1,308 @@
+---
 ############################################
-# Admin User prüfen (DB)
+# Xibo Initial Login & Admin Setup
 ############################################
-- name: Check if admin user exists
+# Führt NUR aus wenn Passwort noch im Auslieferungszustand ist
+# Am Ende wird ein Verifizierungs-Login mit neuen Credentials durchgeführt
+
+############################################
+# Variablen mit Defaults setzen
+############################################
+- name: Set Xibo access variables with defaults
+  set_fact:
+    xibo_url: "{{ xibo_url | default('http://localhost:' ~ xibo_cms_port_host) }}"
+    xibo_initial_username: "{{ xibo_initial_username | default('xibo_admin') }}"
+    xibo_initial_password: "{{ xibo_initial_password | default('password') }}"
+    xibo_admin_new: "{{ xibo_admin_new | default('xibo') }}"
+    xibo_admin_password_new: "{{ xibo_admin_password_new | default('xibo') }}"
+
+############################################
+# VORWEG: Passwort-Check in DB
+############################################
+- name: Check if default user exists (xibo_admin or already renamed)
   shell: >
     docker exec {{ xibo_db_container }}
     mysql -N -s
     -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
-    -e "SELECT COUNT(*) FROM user WHERE userName='{{ xibo_admin_new }}';"
-  register: admin_exists
+    -e "SELECT userName FROM user WHERE userId=1;"
+  register: current_username
   changed_when: false
+  failed_when: false
 
-############################################
-# Login nur wenn Admin noch nicht geändert
-############################################
-- name: Set flag if initial login is required
+- name: Read current password hash from database
+  shell: |
+    docker exec {{ xibo_db_container }} \
+      mysql -N -s \
+      -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} \
+      -e "SELECT userPassword FROM user WHERE userId=1;"
+  register: current_hash
+  changed_when: false
+  failed_when: false
+
+- name: Create password check script
+  copy:
+    dest: /tmp/check_xibo_password.py
+    mode: "0700"
+    content: |
+      #!/usr/bin/env python3
+      import bcrypt, hashlib, sys
+
+      h = "{{ current_hash.stdout }}".strip()
+      
+      # MD5 check for "password"
+      if len(h) == 32:
+          if h == hashlib.md5(b"password").hexdigest():
+              print("true")
+              sys.exit(0)
+      
+      # bcrypt check for "password"
+      if h.startswith("$2"):
+          try:
+              if bcrypt.checkpw(b"password", h.encode()):
+                  print("true")
+                  sys.exit(0)
+          except ValueError:
+              pass
+      
+      print("false")
+  when: current_hash.stdout is defined and current_hash.stdout != ""
+
+- name: Run password check to detect factory default
+  command: python3 /tmp/check_xibo_password.py
+  register: password_is_factory_default
+  changed_when: false
+  when: current_hash.stdout is defined and current_hash.stdout != ""
+
+- name: Remove password check script
+  file:
+    path: /tmp/check_xibo_password.py
+    state: absent
+
+- name: Set flag if setup is required
   set_fact:
-    do_initial_login: "{{ admin_exists.stdout | int == 0 }}"
+    do_initial_setup: "{{ password_is_factory_default.stdout | default('false') == 'true' }}"
 
-############################################
-# 1️⃣ Login-Seite laden (Session + CSRF)
-############################################
-- name: GET login page
-  ansible.builtin.uri:
-    url: "{{ xibo_url }}/login"
-    method: GET
-    return_content: yes
-    validate_certs: false
-  when: do_initial_login
-  register: login_page
-
-############################################
-# 2️⃣ CSRF Token extrahieren
-############################################
-- name: Extract CSRF token
-  set_fact:
-    csrf_token: "{{ login_page.content | regex_search('name=\"csrfToken\" value=\"([^\"]+)\"', '\\1') | first }}"
-  when: do_initial_login
-
-- name: Fail if CSRF token not found
-  fail:
-    msg: "CSRF token could not be extracted from login page"
-  when: do_initial_login and (csrf_token is not defined or csrf_token == "")
-
-############################################
-# 3️⃣ Login durchführen (mit Cookie-Header)
-############################################
-- name: POST login
-  ansible.builtin.uri:
-    url: "{{ xibo_url }}/login"
-    method: POST
-    body_format: form-urlencoded
-    headers:
-      Cookie: "{{ login_page.set_cookie }}"
-    body:
-      username: "{{ xibo_initial_username }}"
-      password: "{{ xibo_initial_password }}"
-      csrfToken: "{{ csrf_token }}"
-      priorRoute: "/"
-    follow_redirects: all
-    status_code: [200, 302]
-    validate_certs: false
-  when: do_initial_login
-  register: login_result
-
-############################################
-# 4️⃣ Login-Erfolg bewerten
-############################################
-- name: Check if login was successful
+- name: Debug setup decision
   debug:
-    msg: "✅ Login erfolgreich!"
-  when: do_initial_login and (login_result.status == 200 or login_result.status == 302)
+    msg: |
+      Aktueller Username: {{ current_username.stdout | default('unknown') }}
+      Passwort ist Auslieferungszustand ('password'): {{ password_is_factory_default.stdout | default('unknown') }}
+      Setup wird durchgeführt: {{ do_initial_setup }}
 
 ############################################
-# Info
+# HAUPTBLOCK: Nur wenn Passwort = "password"
 ############################################
-- name: Login skipped or successful
+- name: Perform initial setup if password is factory default
+  block:
+    ############################################
+    # 1️⃣ Login-Seite laden (Session + CSRF)
+    ############################################
+    - name: GET login page for initial login
+      ansible.builtin.uri:
+        url: "{{ xibo_url }}/login"
+        method: GET
+        return_content: yes
+        validate_certs: false
+        timeout: 30
+      register: login_page
+      retries: 3
+      delay: 5
+      until: login_page.status == 200
+
+    ############################################
+    # 2️⃣ CSRF Token extrahieren
+    ############################################
+    - name: Extract CSRF token for initial login
+      set_fact:
+        csrf_token: "{{ login_page.content | regex_search('name=\"csrfToken\" value=\"([^\"]+)\"', '\\1') | first }}"
+
+    - name: Fail if CSRF token not found
+      fail:
+        msg: "CSRF token could not be extracted from login page"
+      when: csrf_token is not defined or csrf_token == ""
+
+    ############################################
+    # 3️⃣ Initial Login (mit factory credentials)
+    ############################################
+    - name: POST login with factory default credentials
+      ansible.builtin.uri:
+        url: "{{ xibo_url }}/login"
+        method: POST
+        body_format: form-urlencoded
+        headers:
+          Cookie: "{{ login_page.set_cookie }}"
+          Referer: "{{ xibo_url }}/login"
+        body:
+          username: "{{ current_username.stdout }}"  # xibo_admin oder bereits umbenannter Name
+          password: "{{ xibo_initial_password }}"     # password
+          csrfToken: "{{ csrf_token }}"
+          priorRoute: "/"
+        follow_redirects: all
+        status_code: [200, 302]
+        validate_certs: false
+        timeout: 30
+      register: initial_login_result
+
+    - name: Check if initial login was successful
+      debug:
+        msg: "✅ Initial login erfolgreich mit User '{{ current_username.stdout }}'!"
+      when: initial_login_result.status in [200, 302]
+
+    ############################################
+    # 4️⃣ DB-Operationen nach erfolgreichem Login
+    ############################################
+    - name: Perform database operations
+      block:
+        # ==================================================
+        # Check users
+        # ==================================================
+        - name: Check if default admin user xibo_admin still exists
+          shell: >
+            docker exec {{ xibo_db_container }}
+            mysql -N -s
+            -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+            -e "SELECT COUNT(*) FROM user WHERE userName='xibo_admin';"
+          register: xibo_admin_exists
+          changed_when: false
+
+        - name: Check if target user {{ xibo_admin_new }} already exists
+          shell: >
+            docker exec {{ xibo_db_container }}
+            mysql -N -s
+            -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+            -e "SELECT COUNT(*) FROM user WHERE userName='{{ xibo_admin_new }}';"
+          register: xibo_user_exists
+          changed_when: false
+
+        # ==================================================
+        # Rename admin user
+        # ==================================================
+        - name: Rename xibo_admin to {{ xibo_admin_new }}
+          shell: >
+            docker exec {{ xibo_db_container }}
+            mysql
+            -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }}
+            -e "UPDATE user SET userName='{{ xibo_admin_new }}' WHERE userName='xibo_admin';"
+          when:
+            - xibo_admin_exists.stdout | int == 1
+            - xibo_user_exists.stdout | int == 0
+          changed_when: true
+          register: user_renamed
+
+        - name: Debug user rename status
+          debug:
+            msg: "✅ Admin-User von 'xibo_admin' zu '{{ xibo_admin_new }}' umbenannt."
+          when: user_renamed is changed
+
+        - name: Debug user rename skipped
+          debug:
+            msg: "ℹ️ Benutzerumbenennung übersprungen (entweder bereits umbenannt oder Zieluser existiert)."
+          when:
+            - xibo_admin_exists.stdout | int == 0 or xibo_user_exists.stdout | int == 1
+
+        # ==================================================
+        # Generate and set new password
+        # ==================================================
+        - name: Generate bcrypt hash for new password
+          shell: |
+            python3 <<'EOF'
+            import bcrypt
+            print(bcrypt.hashpw(b"{{ xibo_admin_password_new }}", bcrypt.gensalt()).decode())
+            EOF
+          register: xibo_bcrypt
+          changed_when: false
+          no_log: true
+
+        - name: Update admin password to new bcrypt hash
+          shell: |
+            docker exec -i {{ xibo_db_container }} mysql \
+              -u{{ xibo_db_user }} -p{{ xibo_db_password }} {{ xibo_db_name }} <<'SQL'
+            UPDATE user
+            SET userPassword='{{ xibo_bcrypt.stdout }}'
+            WHERE userId=1;
+            SQL
+          changed_when: true
+          register: password_changed
+          no_log: true
+
+        - name: Confirm password changed
+          debug:
+            msg: "✅ Admin-Passwort erfolgreich auf bcrypt-Hash aktualisiert."
+          when: password_changed is changed
+
+      when: initial_login_result.status in [200, 302]
+
+    ############################################
+    # 5️⃣ VERIFICATION LOGIN (mit neuen Credentials)
+    ############################################
+    - name: Wait a moment for changes to take effect
+      pause:
+        seconds: 2
+
+    - name: GET login page for verification
+      ansible.builtin.uri:
+        url: "{{ xibo_url }}/login"
+        method: GET
+        return_content: yes
+        validate_certs: false
+        timeout: 30
+      register: verify_login_page
+      retries: 3
+      delay: 5
+      until: verify_login_page.status == 200
+
+    - name: Extract CSRF token for verification login
+      set_fact:
+        verify_csrf_token: "{{ verify_login_page.content | regex_search('name=\"csrfToken\" value=\"([^\"]+)\"', '\\1') | first }}"
+
+    - name: POST verification login with NEW credentials
+      ansible.builtin.uri:
+        url: "{{ xibo_url }}/login"
+        method: POST
+        body_format: form-urlencoded
+        headers:
+          Cookie: "{{ verify_login_page.set_cookie }}"
+          Referer: "{{ xibo_url }}/login"
+        body:
+          username: "{{ xibo_admin_new }}"
+          password: "{{ xibo_admin_password_new }}"
+          csrfToken: "{{ verify_csrf_token }}"
+          priorRoute: "/"
+        follow_redirects: all
+        status_code: [200, 302]
+        validate_certs: false
+        timeout: 30
+      register: verify_login_result
+      no_log: true  # Enthält neues Passwort
+
+    - name: Verify login was successful
+      debug:
+        msg: "✅ VERIFICATION ERFOLGREICH! Login mit neuen Credentials funktioniert."
+      when: verify_login_result.status in [200, 302]
+
+    - name: Fail if verification login failed
+      fail:
+        msg: |
+          ❌ VERIFICATION FEHLGESCHLAGEN!
+          Login mit neuen Credentials ({{ xibo_admin_new }}) hat nicht funktioniert.
+          Status: {{ verify_login_result.status | default('unknown') }}
+      when: verify_login_result.status not in [200, 302]
+
+  when: do_initial_setup
+
+############################################
+# Summary
+############################################
+- name: Setup summary
   debug:
-    msg: >-
-      {{ 'Initial login skipped (admin already changed)'
-         if not do_initial_login
-         else 'Initial login successful' }}
+    msg: |
+      {% if do_initial_setup %}
+      ✅ Initial Setup ERFOLGREICH abgeschlossen:
+         • Login mit Factory-Credentials durchgeführt
+         • Admin-User umbenannt: {{ current_username.stdout }} → {{ xibo_admin_new }}
+         • Passwort von MD5/default zu bcrypt aktualisiert
+         • Verification-Login mit neuen Credentials erfolgreich
+      {% else %}
+      ℹ️  Setup übersprungen - Passwort ist nicht mehr im Auslieferungszustand.
+         Xibo wurde bereits konfiguriert.
+      {% endif %}
