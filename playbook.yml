@@ -28,22 +28,6 @@
   gather_facts: yes
   become: yes
 
-  ###########################################################################
-  # Interaktive Abfrage (zuverlässig, vor become)
-  ###########################################################################
-  vars_prompt:
-    - name: auto_continue_confirm
-      prompt: |
-        ⚙️  Auto-Continue nach Reboots aktivieren?
-
-        Das Playbook kann sich nach jedem Reboot automatisch fortsetzen,
-        bis die Installation vollständig abgeschlossen ist.
-
-        👉 Tippe 'yes' zum Aktivieren
-        👉 ENTER = manuell
-      private: no
-      default: ""
-
   vars:
     local_user: "{{ lookup('env','USER') }}"
     kiosk_reboot_marker: /var/run/kiosk_reboot_done
@@ -76,22 +60,51 @@
           WantedBy=multi-user.target
 
     ###########################################################################
-    # Auto-Continue nur bei exakt "yes"
+    # Auto-Continue basierend auf secrets.yml Variable
     ###########################################################################
     - name: Enable Ansible auto-continue Service
       ansible.builtin.systemd:
         name: ansible-continue
         enabled: yes
         daemon_reload: yes
-      when: auto_continue_confirm == "yes"
+      when: 
+        - auto_continue_after_reboot is defined
+        - auto_continue_after_reboot | bool
 
-    - name: Info wenn auto-continue NICHT aktiviert
+    - name: Disable Ansible auto-continue Service
+      ansible.builtin.systemd:
+        name: ansible-continue
+        enabled: no
+        daemon_reload: yes
+      when: 
+        - auto_continue_after_reboot is defined
+        - not (auto_continue_after_reboot | bool)
+
+    - name: Info bei aktiviertem auto-continue
+      ansible.builtin.debug:
+        msg: >
+          ✅ Auto-Continue aktiviert.
+          Das Playbook startet nach jedem Reboot automatisch.
+      when: 
+        - auto_continue_after_reboot is defined
+        - auto_continue_after_reboot | bool
+
+    - name: Info bei deaktiviertem auto-continue
       ansible.builtin.debug:
         msg: >
           ℹ️ Auto-Continue deaktiviert.
           Nach jedem Reboot bitte manuell ausführen:
           sudo ansible-playbook -i hosts playbook.yml
-      when: auto_continue_confirm != "yes"
+      when: 
+        - auto_continue_after_reboot is defined
+        - not (auto_continue_after_reboot | bool)
+
+    - name: Warnung wenn Variable nicht gesetzt
+      ansible.builtin.debug:
+        msg: >
+          ⚠️ Variable 'auto_continue_after_reboot' nicht in secrets.yml definiert.
+          Auto-Continue wird NICHT aktiviert.
+      when: auto_continue_after_reboot is not defined
 
   ###########################################################################
   # Rollen
